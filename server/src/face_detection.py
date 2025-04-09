@@ -12,7 +12,7 @@ if getattr(sys, 'frozen', False):
     BASE_DIR = sys._MEIPASS
 else:
     # server/src에서 두 단계 위로 올라가 프로젝트 루트로 이동
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # server/
 
 MODEL_PATH = os.path.join(BASE_DIR, "assets", "models", "yolov8n-face.pt")
 
