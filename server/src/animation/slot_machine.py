@@ -1,7 +1,7 @@
 import random
 import asyncio  # time 대신 asyncio 사용
 
-async def apply_slot_machine_effect(frame, faces, websocket, original_frame=None, is_running=lambda: True):
+async def apply_slot_machine_effect(frame, faces, websocket, original_frame=None, is_running=lambda: True, animation_service=None, client_id=None):
     """ 슬롯머신 효과 적용 - 좌표 기반으로 변경 """
     
     if faces is None or len(faces) == 0:

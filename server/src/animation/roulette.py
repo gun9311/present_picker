@@ -1,7 +1,7 @@
 import random
 import asyncio
 
-async def apply_roulette_effect(frame, faces, websocket, original_frame=None, is_running=lambda: True):
+async def apply_roulette_effect(frame, faces, websocket, original_frame=None, is_running=lambda: True, animation_service=None, client_id=None):
     """ 룰렛 애니메이션 실행하며 발표자 선정 (WebSocket 통신 방식) """
 
     height, width = frame.shape[:2]

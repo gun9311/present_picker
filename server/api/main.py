@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routes import websocket  # 웹소켓 라우터 임포트
+from api.routes import websocket  # 웹소켓 라우터 임포트
 
 app = FastAPI()
 
