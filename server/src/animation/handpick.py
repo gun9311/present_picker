@@ -462,13 +462,13 @@ async def apply_handpick_effect(frame, initial_faces, websocket, original_frame=
             expression_name = "밝은 미소"
             message = f"최고 점수: {final_score_for_message}점"
         elif detection_mode == "open_mouth":
-            expression_name = "놀라운 입벌림"
+            expression_name = "놀라운 한입"
             message = f"최고 점수: {final_score_for_message}점"
         elif detection_mode == "surprise":
             expression_name = "극적인 놀람"
             message = f"최고 점수: {final_score_for_message}점"
         elif detection_mode == "ugly_face":
-            expression_name = "못난이 표정"
+            expression_name = "오늘의 못난이"
             message = f"최고 점수: {final_score_for_message}점"
     else: # 랜덤 선정된 경우
         expression_name = "랜덤 선정"

@@ -468,7 +468,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
             'camera_position': current_camera_position # 보간된 카메라 위치 전송
         })
         
-        await asyncio.sleep(0.04)  # 업데이트 간격 (25fps)
+        await asyncio.sleep(0.05)  # 업데이트 간격 (20fps)
     
     # 레이스 종료 후 처리
     if not is_running(): # 중단된 경우
