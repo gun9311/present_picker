@@ -27,7 +27,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
     max_lanes = 6  # 최대 레인 수는 6개로 유지
     num_participants = min(len(faces), 12)  # 최대 12명으로 확장
     visible_width = 1000  # 화면에 보이는 영역의 너비
-    track_length = visible_width * 3  # 화면 너비의 3배로 설정
+    track_length = visible_width * 3.3  # 화면 너비의 3배로 설정
     
     # 참가자 얼굴 및 ID 선택
     selected_indices = list(range(len(faces)))
@@ -468,7 +468,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
             'camera_position': current_camera_position # 보간된 카메라 위치 전송
         })
         
-        await asyncio.sleep(0.045)  # 업데이트 간격 (30fps)
+        await asyncio.sleep(0.033)  # 업데이트 간격 (30fps)
     
     # 레이스 종료 후 처리
     if not is_running(): # 중단된 경우
