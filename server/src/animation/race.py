@@ -25,7 +25,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
     
     # 기본 설정 및 참가자 정보 초기화
     max_lanes = 6  # 최대 레인 수는 6개로 유지
-    num_participants = min(len(faces), 18)  # 최대 18명으로 확장
+    num_participants = min(len(faces), 12)  # 최대 12명으로 확장
     visible_width = 1000  # 화면에 보이는 영역의 너비
     track_length = visible_width * 3  # 화면 너비의 3배로 설정
     
@@ -91,7 +91,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
     num_total_obstacles = int(num_participants * 1.6)
     
     # 참가자 수에 따라 블랙홀 개수 동적 조정
-    if num_participants <= 12:
+    if num_participants < 12:
         num_blackholes = round(num_participants / 3) # 참가자의 약 1/3 (반올림)
     else:
         num_blackholes = round(num_participants / 2) # 참가자의 약 1/2 (반올림)
@@ -468,7 +468,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
             'camera_position': current_camera_position # 보간된 카메라 위치 전송
         })
         
-        await asyncio.sleep(0.033)  # 업데이트 간격 (22.22fps)
+        await asyncio.sleep(0.045)  # 업데이트 간격 (30fps)
     
     # 레이스 종료 후 처리
     if not is_running(): # 중단된 경우
