@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import styled from "@emotion/styled";
+import { keyframes } from "@emotion/react";
 import { AnimationProps } from "../types";
-import { useAnimationContext } from "../AnimationContext";
 import { useAnimation } from "../useAnimation";
 
 const SlotMachineContainer = styled.div`
@@ -48,9 +48,9 @@ const SlotFaceImage = styled.div<{
 
 // 슬롯 위치를 상대적인 비율로 정의
 const SLOT_RELATIVE_POSITIONS = [
-  { x: 0.209, y: 0.268, width: 0.181, height: 0.432 }, // 첫 번째 슬롯
-  { x: 0.409, y: 0.268, width: 0.181, height: 0.432 }, // 두 번째 슬롯
-  { x: 0.609, y: 0.268, width: 0.181, height: 0.432 }, // 세 번째 슬롯
+  { x: 0.22, y: 0.268, width: 0.181, height: 0.432 }, // 첫 번째 슬롯
+  { x: 0.413, y: 0.268, width: 0.181, height: 0.432 }, // 두 번째 슬롯
+  { x: 0.605, y: 0.268, width: 0.181, height: 0.432 }, // 세 번째 슬롯
 ];
 
 // 슬롯 위치 타입 정의
@@ -60,6 +60,51 @@ interface SlotPosition {
   width: number;
   height: number;
 }
+
+// --- 잭팟 효과 관련 스타일 ---
+const JackpotOverlay = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden; // 오버레이 밖으로 나가는 동전 숨김
+  pointer-events: none; // 아래 요소 클릭 방지
+  z-index: 10; // 다른 요소들 위에 표시
+`;
+
+// 떨어지는 애니메이션 정의
+const fall = keyframes`
+  0% {
+    transform: translateY(-100px) rotateZ(0deg); // 시작 위치 (화면 위)
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotateZ(720deg); // 종료 위치 (화면 아래) + 회전
+    opacity: 0.8;
+  }
+`;
+
+// 개별 동전 스타일
+const Coin = styled.div<{
+  delay: number;
+  left: number;
+  duration: number;
+  size: number; // vw 단위의 숫자 값
+}>`
+  position: absolute;
+  top: -50px; // 초기 위치는 화면 바깥 위쪽
+  left: ${(props) => props.left}%; // 가로 위치 랜덤 설정
+  width: ${(props) => props.size}vw; // vw 단위 사용
+  height: ${(props) => props.size}vw; // vw 단위 사용 (정사각형 유지)
+  background-image: url("assets/images/slot_machine/coin.png"); // 동전 이미지 경로 (실제 경로로 수정 필요)
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0; // 애니메이션 시작 전에는 숨김
+  animation: ${fall} ${(props) => props.duration}s linear infinite;
+  animation-delay: ${(props) =>
+    props.delay}s; // 각 동전의 떨어지는 시작 시간 랜덤 설정
+`;
 
 const SlotMachineAnimation: React.FC<AnimationProps> = ({
   faces,
@@ -73,13 +118,14 @@ const SlotMachineAnimation: React.FC<AnimationProps> = ({
   const [bgImageLoaded, setBgImageLoaded] = useState(false);
   const bgImage = "assets/images/slot_machine/slot_machine.png";
 
-  // 슬롯머신 관련 상태만 가져오기
+  // 슬롯머신 관련 상태 + 잭팟 상태 가져오기
   const {
     slotMachineActive,
     currentSlotFaces,
     selectedFace,
     visibleSlots,
     frozenFrame,
+    jackpotActive,
   } = getSlotMachineState();
 
   // 배경 이미지 프리로드
@@ -151,23 +197,47 @@ const SlotMachineAnimation: React.FC<AnimationProps> = ({
 
   const frameToUse = frozenFrame || lastCapturedFrame;
 
-  if (!slotMachineActive || !frameToUse) return null;
+  // --- 잭팟 효과를 위한 동전 데이터 생성 (메모이제이션 사용 추천) ---
+  const coins = React.useMemo(() => {
+    if (!jackpotActive) return []; // 비활성 시 빈 배열 반환
+
+    // 화면 너비에 따른 상대적인 크기 계산 (예: 1vw ~ 2.5vw)
+    const minSizeVW = 2;
+    const maxSizeVW = 4.5;
+
+    return Array.from({ length: 80 }).map((_, index) => ({
+      // 동전 개수 (예: 80개)
+      id: index,
+      delay: Math.random() * 5, // 애니메이션 지연 시간 (0~5초 사이 랜덤)
+      left: Math.random() * 100, // 가로 위치 (0% ~ 100% 사이 랜덤)
+      duration: Math.random() * 3 + 4, // 떨어지는 시간 (4~7초 사이 랜덤)
+      size: Math.random() * (maxSizeVW - minSizeVW) + minSizeVW, // VW 기반 상대 크기
+    }));
+  }, [jackpotActive]); // jackpotActive가 변경될 때만 재생성
+
+  // 슬롯머신 비활성 + 잭팟 비활성 + 프레임 없을 때만 렌더링 안 함
+  if (!slotMachineActive && !jackpotActive) return null;
+  if (!frameToUse && !jackpotActive) return null; // 프레임 없어도 잭팟은 나올 수 있게
 
   return (
     <SlotMachineContainer ref={containerRef}>
-      {/* 배경 이미지 (항상 표시) */}
-      <SlotMachineImage ref={bgImageRef} src={bgImage} alt="Slot Machine" />
+      {/* 배경 이미지 (슬롯 활성 상태일 때만 또는 항상 표시?) */}
+      {slotMachineActive && bgImageLoaded && (
+        <SlotMachineImage ref={bgImageRef} src={bgImage} alt="Slot Machine" />
+      )}
 
       {/* 로딩 인디케이터 (선택적) */}
-      {!bgImageLoaded && (
+      {slotMachineActive && !bgImageLoaded && (
         <LoadingOverlay>
           <span>로딩 중...</span>
         </LoadingOverlay>
       )}
 
-      {/* 얼굴 이미지 (bgImageLoaded가 true이고 위치 계산이 완료된 경우에만 표시) */}
-      {bgImageLoaded &&
+      {/* 얼굴 이미지 (슬롯 활성, 로딩 완료, 위치 계산 완료 시) */}
+      {slotMachineActive &&
+        bgImageLoaded &&
         slotPositions.length > 0 &&
+        frameToUse &&
         slotPositions.map((slot, idx) => {
           let faceCoords: [number, number, number, number] | null = null;
 
@@ -180,6 +250,8 @@ const SlotMachineAnimation: React.FC<AnimationProps> = ({
           if (!faceCoords) return null;
 
           const [x, y, w, h] = faceCoords;
+
+          if (!frameToUse) return null;
 
           return (
             <SlotFace
@@ -198,6 +270,21 @@ const SlotMachineAnimation: React.FC<AnimationProps> = ({
             </SlotFace>
           );
         })}
+
+      {/* --- 잭팟 효과 렌더링 --- */}
+      {jackpotActive && (
+        <JackpotOverlay>
+          {coins.map((coin) => (
+            <Coin
+              key={coin.id}
+              delay={coin.delay}
+              left={coin.left}
+              duration={coin.duration}
+              size={coin.size}
+            />
+          ))}
+        </JackpotOverlay>
+      )}
     </SlotMachineContainer>
   );
 };

@@ -24,16 +24,21 @@ export const AnimationProvider: React.FC<AnimationProviderProps> = ({
   const [textOverlays, setTextOverlays] = useState<TextOverlayData[]>([]);
   const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(true);
   const audioElementsRef = useRef(new Map<string, HTMLAudioElement>());
+  const preloadedAudioCacheRef = useRef(new Map<string, HTMLAudioElement>());
 
   // 컴포넌트 언마운트 시 모든 오디오 요소 정리
   useEffect(() => {
     return () => {
-      const audioElements = audioElementsRef.current;
-      audioElements.forEach((audio) => {
+      audioElementsRef.current.forEach((audio) => {
         audio.pause();
         audio.currentTime = 0;
       });
-      audioElements.clear();
+      audioElementsRef.current.clear();
+      preloadedAudioCacheRef.current.forEach((audio) => {
+        audio.pause();
+        audio.src = "";
+      });
+      preloadedAudioCacheRef.current.clear();
     };
   }, []);
 
@@ -41,42 +46,52 @@ export const AnimationProvider: React.FC<AnimationProviderProps> = ({
   useEffect(() => {
     setStatus("");
     setIsSelecting(false);
-    // 필요하다면 다른 상태들도 초기화
   }, [mode]);
+
+  // isSoundEnabled 상태가 변경될 때 오디오 처리
+  useEffect(() => {
+    if (!isSoundEnabled) {
+      audioElementsRef.current.forEach((audio) => {
+        audio.pause();
+        audio.currentTime = 0;
+      });
+    }
+  }, [isSoundEnabled]);
 
   const playSound = useCallback(
     (sound: string, options?: { loop?: boolean }) => {
       if (!isSoundEnabled) return;
 
       try {
-        const audioElements = audioElementsRef.current;
+        const activeAudioCache = audioElementsRef.current;
+        const preloadedCache = preloadedAudioCacheRef.current;
         const [mode, soundName] = sound.split("/");
-        const soundPath = `assets/sounds/${mode}/${soundName}.wav`;
+        const soundPathKey = `assets/sounds/${mode}/${soundName}.wav`;
 
-        let audio = audioElements.get(sound);
+        let audio: HTMLAudioElement | undefined =
+          preloadedCache.get(soundPathKey);
 
-        if (!audio) {
-          audio = new Audio(soundPath);
-          audio.volume = 0.5;
-          audioElements.set(sound, audio);
-        }
-
-        if (options?.loop) {
-          audio.loop = true;
+        if (audio) {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.volume = 0.2;
+          audio.loop = options?.loop ?? false;
+          activeAudioCache.set(sound, audio);
+        } else {
+          console.warn(
+            `[playSound] Audio not found in preload cache, creating new: ${soundPathKey}`
+          );
+          audio = new Audio(`${soundPathKey}`);
+          audio.volume = 0.2;
+          audio.loop = options?.loop ?? false;
+          activeAudioCache.set(sound, audio);
+          preloadedCache.set(soundPathKey, audio);
         }
 
         const playPromise = audio.play();
         if (playPromise !== undefined) {
           playPromise.catch((error) => {
-            console.error("Sound play error:", error, "Path:", soundPath);
-            setTimeout(() => {
-              const retryAudio = audioElements.get(sound);
-              if (retryAudio) {
-                retryAudio
-                  .play()
-                  .catch((e) => console.error("Retry failed:", e));
-              }
-            }, 100);
+            console.error("Sound play error:", error, "Path:", soundPathKey);
           });
         }
       } catch (error) {
@@ -121,6 +136,7 @@ export const AnimationProvider: React.FC<AnimationProviderProps> = ({
         stopSound,
         isSoundEnabled,
         setIsSoundEnabled,
+        preloadedAudioCache: preloadedAudioCacheRef,
       }}
     >
       {children}

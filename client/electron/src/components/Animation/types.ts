@@ -187,8 +187,11 @@ export interface RaceParticipant {
   speed: number;
   lane: number;
   face_index: number;
-  powerup_timer?: number;
-  z_index?: number; // z-index 추가
+  powerup_timer?: number; // 부스트 타이머
+  shield_active?: boolean; // 보호막 활성화 상태
+  shield_timer?: number; // 보호막 남은 시간
+  z_index?: number;
+  eliminated?: boolean;
 }
 
 export interface InitRaceMessage extends BaseWebSocketMessage {
@@ -229,12 +232,15 @@ export interface RaceCollisionMessage extends BaseWebSocketMessage {
   type: "race_collision";
   racer_id: number;
   item_id: number;
+  is_elimination?: boolean;
+  shield_broken?: boolean; // 보호막 깨짐 여부 필드 추가
 }
 
 export interface RacePowerupMessage extends BaseWebSocketMessage {
   type: "race_powerup";
   racer_id: number;
   item_id: number;
+  powerup_type: number; // 파워업 타입 추가 (1: 부스트, 2: 보호막)
 }
 
 export interface RaceResultMessage extends BaseWebSocketMessage {
@@ -288,6 +294,104 @@ export interface CurtainIntroEndMessage extends BaseWebSocketMessage {
   type: "curtain_intro_end";
 }
 
+// 스캐너 타겟팅 메시지
+export interface ScannerTargetMessage extends BaseWebSocketMessage {
+  type: "scanner_target";
+  target_point: [number, number];
+  progress: number;
+  stage: string;
+}
+
+// 스캐너 얼굴 타겟팅 메시지
+export interface ScannerFaceTargetMessage extends BaseWebSocketMessage {
+  type: "scanner_face_target";
+  face: [number, number, number, number];
+  is_final: boolean;
+  stage: string;
+}
+
+// 스캐너 전환 메시지
+export interface ScannerTransitionMessage extends BaseWebSocketMessage {
+  type: "scanner_transition";
+  text: string;
+}
+
+// 스캐너 줌 메시지
+export interface ScannerZoomMessage extends BaseWebSocketMessage {
+  type: "scanner_zoom";
+  face: [number, number, number, number];
+  zoom_scale: number;
+  stage: string;
+  progress: number;
+  show_border?: boolean;
+}
+
+// 스캐너 카메라 패닝 메시지
+export interface ScannerCameraPanMessage extends BaseWebSocketMessage {
+  type: "scanner_camera_pan";
+  face: [number, number, number, number];
+  offset_x: number;
+  offset_y: number;
+  stage: string;
+  progress: number;
+}
+
+// 스캐너 결과 메시지
+export interface ScannerResultMessage extends BaseWebSocketMessage {
+  type: "scanner_result";
+  face?: [number, number, number, number];
+  message: string;
+}
+
+// 표정 감지 시작 메시지
+export interface HandpickStartMessage extends BaseWebSocketMessage {
+  type: "handpick_start";
+}
+
+// 표정 감지 진행 메시지
+export interface HandpickProgressMessage extends BaseWebSocketMessage {
+  type: "handpick_progress";
+  faces: Array<{
+    face: [number, number, number, number];
+    expression_score: number;
+    is_candidate: boolean;
+  }>;
+  stage: string;
+  progress: number;
+  countdown?: number; // Optional: 시작 카운트다운 숫자
+  expression_mode: string;
+}
+
+// 표정 감지 결과 메시지
+export interface HandpickResultMessage extends BaseWebSocketMessage {
+  type: "handpick_result";
+  face: [number, number, number, number];
+  expression_name: string;
+  message: string;
+  ranking: Array<{
+    face: [number, number, number, number];
+    rank: number;
+    score: number;
+  }>;
+  result_frame?: string; // Optional: 최종 결과 시점의 프레임 (Base64)
+}
+
+// 보정 완료 메시지 추가
+export interface HandpickCalibrationCompleteMessage
+  extends BaseWebSocketMessage {
+  type: "handpick_calibration_complete";
+  expression_mode: string;
+  measurement_time: number;
+}
+
+// --- 잭팟 효과 메시지 타입 추가 ---
+export interface ShowJackpotEffectMessage extends BaseWebSocketMessage {
+  type: "show_jackpot_effect";
+}
+
+// 얼굴 좌표 타입 추가
+export type FaceCoordinates = [number, number, number, number];
+
 // 모든 웹소켓 메시지 타입의 유니온 타입 업데이트
 export type WebSocketMessage =
   | AnimationFrameMessage
@@ -304,6 +408,7 @@ export type WebSocketMessage =
   | AnimationStepMessage
   | AnimationResultMessage
   | ShowSlotMessage
+  | ShowJackpotEffectMessage
   | InitRouletteMessage
   | RouletteRotationMessage
   | RouletteResultMessage
@@ -319,4 +424,14 @@ export type WebSocketMessage =
   | CurtainUpdateMessage
   | CurtainSelectionMessage
   | CurtainResultMessage
-  | CurtainIntroEndMessage;
+  | CurtainIntroEndMessage
+  | ScannerTargetMessage
+  | ScannerFaceTargetMessage
+  | ScannerTransitionMessage
+  | ScannerZoomMessage
+  | ScannerCameraPanMessage
+  | ScannerResultMessage
+  | HandpickStartMessage
+  | HandpickCalibrationCompleteMessage
+  | HandpickProgressMessage
+  | HandpickResultMessage;

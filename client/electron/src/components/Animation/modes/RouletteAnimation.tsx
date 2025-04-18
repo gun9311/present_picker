@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import styled from "@emotion/styled";
+import { keyframes } from "@emotion/react";
 import { AnimationProps, RouletteAnimationParams } from "../types";
 import { useAnimationContext } from "../AnimationContext";
 import { useAnimation } from "../useAnimation";
@@ -92,17 +93,50 @@ const FaceImage = styled.img`
   object-fit: cover;
 `;
 
+// WinnerText 나타나는 애니메이션 정의
+const fadeIn = keyframes`
+  from {
+    opacity: 0;
+    transform: translate(-50%, -30%); /* 시작 위치 약간 위 */
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%); /* 최종 중앙 위치 */
+  }
+`;
+
+// WinnerText 스타일 개선 및 중앙 배치, 반응형 폰트 크기 적용
 const WinnerText = styled.div`
   position: absolute;
-  bottom: 50px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 30px;
-  color: #00ff00;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+  /* --- 중앙 배치 스타일 --- */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%); /* 초기 위치는 애니메이션 시작점 */
+  /* ---------------------- */
+  background-color: rgba(0, 0, 0, 0.8); /* 배경 약간 더 진하게 */
+  color: #ffd700; /* 골드 색상으로 변경 */
+  padding: 20px 40px; /* 패딩 증가 */
+  border-radius: 30px; /* 모서리 더 둥글게 */
+  /* --- 반응형 폰트 크기 (clamp 사용) --- */
+  /* 최소 24px, 기본 5vw, 최대 48px */
+  font-size: clamp(24px, 5vw, 48px);
+  /* ----------------------------------- */
   font-weight: bold;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.9); /* 그림자 강화 */
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6); /* 그림자 강화 */
   z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 15px; /* 아이콘 간격 조정 */
+  animation: ${fadeIn} 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; /* 애니메이션 지속 시간, 타이밍 함수 변경 */
+  opacity: 0;
+  white-space: nowrap;
+`;
+
+// 아이콘 스타일 (기존과 동일)
+const WinnerIcon = styled.span`
+  font-size: 1.2em;
+  line-height: 1;
 `;
 
 const RouletteAnimation: React.FC<AnimationProps> = ({
@@ -133,12 +167,8 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
 
   // 룰렛 관련 상태 가져오기
   const { getRouletteState } = useAnimation(websocket);
-  const {
-    rouletteActive,
-    rouletteFaces,
-    frozenFrame,
-    rouletteParams,
-  } = getRouletteState();
+  const { rouletteActive, rouletteFaces, frozenFrame, rouletteParams } =
+    getRouletteState();
 
   // 화면에 표시할 프레임
   const frameToUse = frozenFrame || lastCapturedFrame;
@@ -307,7 +337,9 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
     }
   }, [rouletteFaces, frameToUse, extractFaceImage, rouletteActive]);
 
-  // 클라이언트 측 애니메이션 실행 함수 수정 - 선형 감속 방식 적용
+  // 클라이언트 측 애니메이션 실행 함수 수정
+  const slowSoundPlayedRef = useRef<boolean>(false);
+
   const startClientSideAnimation = useCallback(
     (params: RouletteAnimationParams) => {
       if (animationRef.current) {
@@ -318,38 +350,36 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
       animationCompletedRef.current = false;
       setAnimationCompleted(false);
 
-      const {
-        initial_speed,
-        deceleration,
-        deceleration_constant,
-        speed_threshold,
-        use_linear_deceleration = false,
-      } = params;
+      slowSoundPlayedRef.current = false;
 
-      // 초기 각도와 속도 설정
       let currentAngle = 0;
-      let currentSpeed = initial_speed; // 초기 속도에 이미 방향이 포함되어 있음
+      let currentSpeed = params.initial_speed;
 
-      // 초기 애니메이션 시작 시 루프 효과음 재생
       playSound("roulette/spin_loop", { loop: true });
 
       // 애니메이션 진행 함수
       const animateFrame = () => {
-        // 애니메이션 계속 진행할지 결정 (속도가 임계값보다 낮아지면 멈춤)
-        if (Math.abs(currentSpeed) > speed_threshold) {
+        // 애니메이션 계속 진행할지 결정
+        if (Math.abs(currentSpeed) > params.speed_threshold) {
           // 속도에 따른 사운드 변경
-          if (Math.abs(currentSpeed) < 6 && Math.abs(currentSpeed) > 3) {
-            // 느린 회전으로 전환 시 효과음 변경
+          if (
+            Math.abs(currentSpeed) < 6 &&
+            Math.abs(currentSpeed) > 3 &&
+            !slowSoundPlayedRef.current
+          ) {
+            slowSoundPlayedRef.current = true;
             stopSound("roulette/spin_loop");
-            playSound("roulette/spin_slow", { loop: true });
+            setTimeout(() => {
+              playSound("roulette/spin_slow", { loop: true });
+            }, 50);
+          } else if (Math.abs(currentSpeed) >= 6) {
+            slowSoundPlayedRef.current = false;
           }
 
           // 속도에 따른 트랜지션 적용 방식 변경
           if (Math.abs(currentSpeed) > 5) {
-            // 빠른 회전 - 트랜지션 없이 직접 각도 업데이트
             setTransitionDuration("0s");
           } else {
-            // 느린 회전 - 부드러운 트랜지션 사용
             setTransitionDuration("0.08s");
           }
 
@@ -357,32 +387,32 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
           currentAngle += currentSpeed;
 
           // 속도 업데이트 - 속도에 따라 감속 정도를 조절하는 방식
-          if (use_linear_deceleration && deceleration_constant) {
+          if (params.use_linear_deceleration && params.deceleration_constant) {
             // 속도가 느려질수록 감속 상수를 점진적으로 더 많이 줄임
             const sign = Math.sign(currentSpeed);
             const speedAbs = Math.abs(currentSpeed);
 
             // 속도에 따른 가변적 감속 상수 계산 - 더 강한 감소 곡선 적용
-            let adjustedDeceleration = deceleration_constant;
+            let adjustedDeceleration = params.deceleration_constant;
 
             // 속도가 낮아질수록 감속 상수를 더 급격히 줄이는 로직
             if (speedAbs < 15) {
               // 속도의 제곱에 비례하도록 설정 (비선형적 감소)
               adjustedDeceleration =
-                deceleration_constant * Math.pow(speedAbs / 15, 2);
+                params.deceleration_constant * Math.pow(speedAbs / 15, 2);
               // 최소값 보장 (더 작은 최소값 설정)
               adjustedDeceleration = Math.max(
                 adjustedDeceleration,
-                deceleration_constant * 0.13
+                params.deceleration_constant * 0.13
               );
             }
 
             // 조정된 감속 상수 적용
             const newSpeed = speedAbs - adjustedDeceleration;
             currentSpeed = newSpeed > 0 ? newSpeed * sign : 0;
-          } else if (deceleration) {
+          } else if (params.deceleration) {
             // 기존 지수적 감속: 계수 곱하기
-            currentSpeed *= deceleration;
+            currentSpeed *= params.deceleration;
           } else {
             // 기본값으로 약한 선형 감속 적용
             const sign = Math.sign(currentSpeed);
@@ -440,6 +470,9 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
       }
     });
 
+    console.log(
+      `[Determine Winner] Winner Index: ${winnerIndex}, Setting states.`
+    );
     setLocalRouletteWinner(winnerIndex);
     setShowWinnerText(true);
 
@@ -453,7 +486,7 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
         })
       );
     }
-  }, [websocket]);
+  }, [websocket, localRouletteWinner]);
 
   // 활성화될 때마다 크기 업데이트 및 애니메이션 매개변수 적용
   useEffect(() => {
@@ -518,13 +551,6 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
             const isWinner =
               animationCompleted && localRouletteWinner === index;
 
-            // 디버깅 로그 추가 - 당첨자인 경우만 표시
-            if (index === localRouletteWinner) {
-              console.log(
-                `[렌더링] 당첨자 얼굴 ${index}, 하이라이트=${isWinner}, animationCompleted=${animationCompleted}`
-              );
-            }
-
             // 얼굴 자전 - 룰렛 회전 각도의 반대 방향으로 회전
             const faceRotation = -rouletteAngleState;
 
@@ -564,10 +590,13 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
         />
       </RouletteWrapper>
 
-      {/* 선택 결과 텍스트 */}
-      {(showWinnerText || animationCompleted) && (
-        <WinnerText>🎉 너는 내 운명!</WinnerText>
-      )}
+      {/* 선택 결과 텍스트 - JSX 수정 (첫 번째 아이콘 제거) */}
+      {(showWinnerText || animationCompleted) &&
+        localRouletteWinner !== null && (
+          <WinnerText>
+            너는 내 운명! <WinnerIcon>💖</WinnerIcon>
+          </WinnerText>
+        )}
     </RouletteContainer>
   );
 };

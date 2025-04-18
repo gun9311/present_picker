@@ -69,7 +69,13 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
     // useEffect를 추가하여 isSelecting이나 currentMode가 변경될 때 캔버스 초기화
     useEffect(() => {
       // 커튼 애니메이션이 시작되면 즉시 캔버스 초기화
-      if (isSelecting && currentMode === "curtain" && faceCanvasRef.current) {
+      if (
+        isSelecting &&
+        (currentMode === "curtain" ||
+          currentMode === "scanner" ||
+          currentMode === "handpick") &&
+        faceCanvasRef.current
+      ) {
         const ctx = faceCanvasRef.current.getContext("2d");
         if (ctx) {
           ctx.clearRect(
@@ -86,7 +92,10 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
     const drawFaces = useCallback(() => {
       // 애니메이션이 진행 중이거나 필요한 참조가 없으면 리턴
       if (
-        (isSelecting && currentMode === "curtain") ||
+        (isSelecting &&
+          (currentMode === "curtain" ||
+            currentMode === "scanner" ||
+            currentMode === "handpick")) ||
         !faceCanvasRef.current ||
         !videoRef.current
       )
@@ -121,7 +130,13 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
           if (!isActive) return;
 
           // 커튼 애니메이션 중에는 얼굴 프레임 업데이트 건너뜀
-          if (isSelecting && currentMode === "curtain") return;
+          if (
+            isSelecting &&
+            (currentMode === "curtain" ||
+              currentMode === "scanner" ||
+              currentMode === "handpick")
+          )
+            return;
 
           prevFacesRef.current = [...newFaces];
           drawFaces();
@@ -132,14 +147,16 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
 
     const captureFrame = useCallback(() => {
       if (!isActive || !isConnected) {
-        frameRequestRef.current = requestAnimationFrame(captureFrame);
+        if (frameRequestRef.current)
+          cancelAnimationFrame(frameRequestRef.current);
+        frameRequestRef.current = null;
         return;
       }
 
       const video = videoRef.current;
       const canvas = canvasRef.current;
 
-      if (!video || !canvas || video.readyState !== video.HAVE_ENOUGH_DATA) {
+      if (!video || !canvas || video.readyState < video.HAVE_METADATA) {
         frameRequestRef.current = requestAnimationFrame(captureFrame);
         return;
       }
@@ -165,11 +182,14 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
             onFrame?.(base64Data);
             lastCaptureTime.current = now;
           } else {
-            console.warn("프레임 데이터가 너무 작습니다:", base64Data?.length);
+            console.warn(
+              "캡처된 프레임 데이터가 너무 작거나 유효하지 않습니다:",
+              base64Data?.length
+            );
           }
         }
       } catch (error) {
-        console.error("Error capturing frame:", error);
+        console.error("프레임 캡처 중 오류:", error);
       }
 
       frameRequestRef.current = requestAnimationFrame(captureFrame);
@@ -178,87 +198,94 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
     useEffect(() => {
       let currentStream: MediaStream | null = null;
 
-      if (isActive) {
-        navigator.mediaDevices
-          .getUserMedia({
+      const startCamera = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
             video: {
               width: { ideal: 1280 },
               height: { ideal: 720 },
-              frameRate: { max: 30 }, // 최대 프레임레이트 제한
+              frameRate: { max: 30 },
             },
-          })
-          .then((stream) => {
-            if (videoRef.current) {
-              videoRef.current.srcObject = stream;
-              currentStream = stream;
+          });
 
-              // 비디오 설정 최적화
-              videoRef.current.playsInline = true;
-              videoRef.current.style.transform = "translate3d(0, 0, 0)"; // 하드웨어 가속
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            currentStream = stream;
+            videoRef.current.playsInline = true;
+            videoRef.current.style.transform = "translate3d(0, 0, 0)";
 
-              videoRef.current.onloadeddata = () => {
-                const video = videoRef.current;
-                const hiddenCanvas = canvasRef.current;
-                const faceCanvas = faceCanvasRef.current;
+            videoRef.current.onloadeddata = () => {
+              const video = videoRef.current;
+              const hiddenCanvas = canvasRef.current;
+              const faceCanvas = faceCanvasRef.current;
+              if (video && hiddenCanvas && faceCanvas) {
+                const { videoWidth, videoHeight } = video;
+                hiddenCanvas.width = videoWidth;
+                hiddenCanvas.height = videoHeight;
+                faceCanvas.width = videoWidth;
+                faceCanvas.height = videoHeight;
+                console.log("Video metadata loaded, dimensions set.");
+              }
 
-                if (video && hiddenCanvas && faceCanvas) {
-                  const { videoWidth, videoHeight } = video;
-                  hiddenCanvas.width = videoWidth;
-                  hiddenCanvas.height = videoHeight;
-                  faceCanvas.width = videoWidth;
-                  faceCanvas.height = videoHeight;
-                }
-
-                setTimeout(() => {
-                  video?.play();
+              setTimeout(() => {
+                video
+                  ?.play()
+                  .catch((e) => console.error("Video play error:", e));
+                if (isActive && isConnected) {
+                  console.log("Starting frame capture after delay.");
                   captureFrame();
-                }, 1000);
-              };
-            }
-          })
-          .catch((err) => console.error("카메라 접근 에러:", err));
-      }
+                } else {
+                  console.log(
+                    "Delay ended, but not starting capture (isActive:",
+                    isActive,
+                    "isConnected:",
+                    isConnected,
+                    ")"
+                  );
+                }
+              }, 300);
+            };
+            videoRef.current.onloadedmetadata = videoRef.current.onloadeddata;
+          }
+        } catch (err) {
+          console.error("카메라 접근 에러:", err);
+        }
+      };
 
-      return () => {
+      const stopCamera = () => {
+        console.log("Stopping camera and cleaning up...");
         if (frameRequestRef.current) {
           cancelAnimationFrame(frameRequestRef.current);
           frameRequestRef.current = null;
         }
-
         if (faceUpdateAnimationRef.current) {
           cancelAnimationFrame(faceUpdateAnimationRef.current);
           faceUpdateAnimationRef.current = null;
         }
-
+        if (videoRef.current) {
+          videoRef.current.srcObject = null;
+        }
         if (currentStream) {
           currentStream.getTracks().forEach((track) => track.stop());
+          currentStream = null;
         }
       };
-    }, [isActive, captureFrame]);
+
+      if (isActive) {
+        startCamera();
+      } else {
+        stopCamera();
+      }
+
+      return () => {
+        stopCamera();
+      };
+    }, [isActive, captureFrame, isConnected]);
 
     return (
       <VideoContainer>
-        <Video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          style={{
-            transform: "translate3d(0, 0, 0)", // 하드웨어 가속
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-          }}
-        />
-        {/* 얼굴 인식 프레임 표시용 캔버스 */}
-        <FaceCanvas
-          ref={faceCanvasRef}
-          style={{
-            transform: "translate3d(0, 0, 0)", // 하드웨어 가속
-            width: "100%",
-            height: "100%",
-          }}
-        />
+        <Video ref={videoRef} autoPlay playsInline muted />
+        <FaceCanvas ref={faceCanvasRef} />
         <HiddenCanvas ref={canvasRef} />
       </VideoContainer>
     );

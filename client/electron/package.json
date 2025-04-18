@@ -1,6 +1,6 @@
 {
   "name": "electron",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "main": "public/electron.js",
   "dependencies": {
@@ -17,6 +17,7 @@
     "electron": "^35.0.3",
     "electron-builder": "^25.1.8",
     "electron-is-dev": "^3.0.1",
+    "firebase-admin": "^13.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-scripts": "5.0.1",
@@ -50,6 +51,7 @@
     ]
   },
   "devDependencies": {
+    "@types/electron": "^1.6.12",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "wait-on": "^8.0.3"

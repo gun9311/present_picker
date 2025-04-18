@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import styled from "@emotion/styled";
 import { AnimationProps } from "../types";
 import { useAnimation } from "../useAnimation";
@@ -129,6 +129,15 @@ const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
   );
   const [zoomActive, setZoomActive] = useState<boolean>(false);
 
+  // 스케일 애니메이션을 위한 상태 추가
+  const [targetScale, setTargetScale] = useState<number>(1.0);
+  const [currentScale, setCurrentScale] = useState<number>(1.0);
+  const [isAnimatingScale, setIsAnimatingScale] = useState<boolean>(false);
+  const animationRef = useRef<number | null>(null);
+
+  // 프리웜업 상태 추가
+  const [isWarmedUp, setIsWarmedUp] = useState<boolean>(false);
+
   // 이전 줌 상태 저장용 ref
   const prevZoomStateRef = useRef<{
     face: [number, number, number, number] | null;
@@ -159,7 +168,127 @@ const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
     zoomParams,
   } = getCurtainState();
 
-  // 줌 효과 계산 및 적용
+  // 부드러운 스케일 애니메이션 함수
+  const animateScale = useCallback(
+    (target: number, translateX: number, translateY: number) => {
+      setIsAnimatingScale(true);
+
+      let startTime: number | null = null;
+      const duration = zoomParams?.duration || 0.8; // 초 단위
+      const durationMs = duration * 1000; // 밀리초 단위로 변환
+
+      // 이전 애니메이션이 있다면 취소
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+
+      const animate = (timestamp: number) => {
+        if (!startTime) startTime = timestamp;
+        const elapsed = timestamp - startTime;
+        const progress = Math.min(elapsed / durationMs, 1); // 0~1 사이 값
+
+        // 현재 스케일 값 계산 (easeOutCubic 애니메이션 적용)
+        const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+        const easedProgress = easeOutCubic(progress);
+
+        const newScale = currentScale + (target - currentScale) * easedProgress;
+        setCurrentScale(newScale);
+
+        // 새 줌 트랜스폼 적용
+        const newTransform = `scale(${newScale}) translate(${
+          translateX * 100
+        }%, ${translateY * 100}%)`;
+        setZoomTransform(newTransform);
+
+        // 비디오 요소에 트랜스폼 직접 적용
+        if (cameraContainerRef?.current) {
+          const videoElement =
+            cameraContainerRef.current.querySelector("video");
+          if (videoElement) {
+            videoElement.style.transition = "none"; // 트랜지션을 비활성화하고 직접 애니메이션 적용
+            videoElement.style.transform = `translate3d(0, 0, 0) ${newTransform}`;
+          }
+        }
+
+        // 애니메이션이 완료되지 않았으면 계속 진행
+        if (progress < 1) {
+          animationRef.current = requestAnimationFrame(animate);
+        } else {
+          // 애니메이션 완료
+          setIsAnimatingScale(false);
+          setCurrentScale(target);
+          animationRef.current = null;
+        }
+      };
+
+      // 애니메이션 시작
+      animationRef.current = requestAnimationFrame(animate);
+    },
+    [cameraContainerRef, zoomParams, currentScale]
+  );
+
+  // 프리웜업 실행 함수 추가
+  const performPrewarmup = useCallback(() => {
+    if (!cameraContainerRef?.current) return;
+
+    console.log("줌 애니메이션 프리웜업 시작...");
+
+    // 보이지 않는 곳에 숨겨진 더미 요소 생성
+    const dummyElement = document.createElement("div");
+    dummyElement.style.position = "absolute";
+    dummyElement.style.top = "-9999px";
+    dummyElement.style.left = "-9999px";
+    dummyElement.style.width = "100px";
+    dummyElement.style.height = "100px";
+    document.body.appendChild(dummyElement);
+
+    // 더미 스케일 애니메이션 수행 (값은 작게 시작)
+    const warmupScales = [1.2, 1.5, 2.0, 2.5];
+    let currentIndex = 0;
+
+    const runWarmupStep = () => {
+      if (currentIndex >= warmupScales.length) {
+        // 웜업 완료
+        document.body.removeChild(dummyElement);
+        setIsWarmedUp(true);
+        console.log("줌 애니메이션 프리웜업 완료");
+        return;
+      }
+
+      const scale = warmupScales[currentIndex];
+      dummyElement.style.transform = `scale(${scale})`;
+
+      // GPU 가속 강제 트리거
+      void dummyElement.offsetHeight;
+
+      // 다음 스텝
+      currentIndex++;
+      setTimeout(runWarmupStep, 50);
+    };
+
+    // 웜업 시작
+    runWarmupStep();
+
+    // 실제 비디오 요소에도 미리 CSS 속성 설정
+    const videoElement = cameraContainerRef.current.querySelector("video");
+    if (videoElement) {
+      videoElement.style.willChange = "transform";
+      videoElement.style.transform = "translate3d(0, 0, 0)";
+      // 하드웨어 가속 트리거
+      void videoElement.offsetHeight;
+    }
+  }, [cameraContainerRef]);
+
+  // 컴포넌트 마운트 시 프리웜업 실행
+  useEffect(() => {
+    if (!isWarmedUp && curtainActive) {
+      // 첫 렌더링 후 잠시 지연시켜 프리웜업 실행
+      const warmupTimer = setTimeout(performPrewarmup, 100);
+      return () => clearTimeout(warmupTimer);
+    }
+  }, [isWarmedUp, curtainActive, performPrewarmup]);
+
+  // 줌 효과 계산 및 적용 (수정된 버전)
   useEffect(() => {
     if (!cameraContainerRef?.current || !selectedFace) return;
 
@@ -187,18 +316,9 @@ const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
 
       // 얼굴 크기에 따른 확대율 계산 (비율 기반)
       const faceRatio = w / videoWidth; // 얼굴이 화면 너비에서 차지하는 비율
-      let scale;
-
-      if (faceRatio < 0.1) {
-        // 매우 작은 얼굴
-        scale = Math.min(4.0, 1.0 / Math.max(faceRatio, 0.05));
-      } else if (faceRatio < 0.2) {
-        // 중간 크기 얼굴
-        scale = Math.min(2.5, 1.0 / Math.max(faceRatio, 0.08));
-      } else {
-        // 큰 얼굴
-        scale = Math.min(1.8, 1.0 / Math.max(faceRatio, 0.1));
-      }
+      const targetRatio = 0.27; // 얼굴이 화면의 1/3 정도 차지하게
+      let scale = targetRatio / Math.max(faceRatio, 0.01); // 너무 작은 비율 방지
+      scale = Math.max(1.0, Math.min(4.0, scale)); // 줌 스케일 제한
 
       // 또는 zoomParams가 있으면 사용
       scale = zoomParams?.scale || scale;
@@ -212,26 +332,30 @@ const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
       const translateY =
         ((videoHeight / 2 - centerY) / (videoHeight / 2)) * 0.5;
 
-      // 줌 트랜스폼 설정
-      setZoomTransform(
-        `scale(${scale}) translate(${translateX * 100}%, ${translateY * 100}%)`
-      );
-      setZoomActive(true);
+      // 목표 스케일 설정
+      setTargetScale(scale);
 
-      // 비디오 요소에 트랜스폼 적용
-      if (videoElement) {
-        const duration = zoomParams?.duration || 0.8;
-        videoElement.style.transition = `transform ${duration}s ease-out`;
-        videoElement.style.transform = `translate3d(0, 0, 0) ${zoomTransform}`;
-      }
+      // 스케일 애니메이션 실행
+      animateScale(scale, translateX, translateY);
+
+      setZoomActive(true);
     }
   }, [
     selectedFace,
     curtainPosition,
     cameraContainerRef,
     zoomParams,
-    zoomTransform,
+    animateScale,
   ]);
+
+  // 컴포넌트 언마운트 시 애니메이션 정리
+  useEffect(() => {
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, []);
 
   // 선택된 얼굴이 있으면 카메라 컨테이너 스타일 변경
   useEffect(() => {

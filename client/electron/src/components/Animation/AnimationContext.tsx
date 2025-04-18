@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, RefObject } from "react";
 import { AnimationMode, TextOverlayData, OverlayData } from "./types";
 
 interface AnimationContextType {
@@ -18,7 +18,7 @@ interface AnimationContextType {
   stopSound: (sound: string) => void;
   isSoundEnabled: boolean;
   setIsSoundEnabled: (enabled: boolean) => void;
-  // 기타 공통 기능...
+  preloadedAudioCache: RefObject<Map<string, HTMLAudioElement>>;
 }
 
 export const AnimationContext = createContext<AnimationContextType | null>(

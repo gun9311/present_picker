@@ -17,6 +17,8 @@ import RouletteAnimation from "../Animation/modes/RouletteAnimation";
 import RaceAnimation from "../Animation/modes/RaceAnimation";
 import { useAnimation } from "../Animation/useAnimation";
 import CurtainAnimation from "../Animation/modes/CurtainAnimation";
+import ScannerAnimation from "../Animation/modes/ScannerAnimation";
+import HandpickAnimation from "../Animation/modes/HandPickAnimation";
 
 const ModalOverlay = styled.div`
   position: fixed;
@@ -80,6 +82,7 @@ const SoundToggle = styled.button`
 const CameraContainer = styled.div`
   width: 99%;
   height: auto;
+  max-height: 1000px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -165,6 +168,32 @@ const LoadingText = styled.p`
   font-size: 18px;
 `;
 
+// --- 새 뒤로가기 버튼 스타일 추가 ---
+const BackButton = styled.button`
+  position: absolute;
+  top: 25px; // Title 높이 고려하여 조정
+  left: 25px;
+  background: rgba(0, 0, 0, 0.4); // 반투명 배경
+  border: none;
+  color: white;
+  font-size: 22px; // 아이콘 크기
+  cursor: pointer;
+  z-index: 1001; // Title, SoundToggle과 동일 레벨
+  border-radius: 50%; // 원형 버튼
+  width: 40px; // 버튼 크기
+  height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: background-color 0.2s;
+  line-height: 1; // 아이콘 수직 정렬
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.6); // 호버 시 약간 더 진하게
+  }
+`;
+// --- 스타일 추가 끝 ---
+
 interface AnimationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -200,6 +229,7 @@ interface ResourceInfo {
 const MODE_RESOURCES: Record<AnimationMode, ResourceInfo[]> = {
   slot: [
     { type: "image", path: "assets/images/slot_machine/slot_machine.png" },
+    { type: "image", path: "assets/images/slot_machine/coin.png" },
     { type: "sound", path: "assets/sounds/slot_machine/slot_spin.wav" },
     { type: "sound", path: "assets/sounds/slot_machine/slot_stop.wav" },
     { type: "sound", path: "assets/sounds/slot_machine/winner.wav" },
@@ -217,11 +247,8 @@ const MODE_RESOURCES: Record<AnimationMode, ResourceInfo[]> = {
     { type: "image", path: "assets/images/curtain/curtain_left.png" },
     { type: "image", path: "assets/images/curtain/curtain_right.png" },
     { type: "image", path: "assets/images/curtain/curtain_top.png" },
-    { type: "sound", path: "assets/sounds/curtain/applause.wav" },
     { type: "sound", path: "assets/sounds/curtain/curtain_open.wav" },
     { type: "sound", path: "assets/sounds/curtain/curtain_close.wav" },
-    { type: "sound", path: "assets/sounds/curtain/drumroll.wav" },
-    { type: "sound", path: "assets/sounds/curtain/spotlight.wav" },
     { type: "sound", path: "assets/sounds/curtain/tada.wav" },
   ],
   scanner: [
@@ -230,52 +257,69 @@ const MODE_RESOURCES: Record<AnimationMode, ResourceInfo[]> = {
       type: "image",
       path: "assets/images/scanner_zoom/eye_of_sauron_border.png",
     },
+    { type: "image", path: "assets/images/scanner_zoom/fake_eye.png" },
+    { type: "image", path: "assets/images/scanner_zoom/target_radar.png" },
+    { type: "image", path: "assets/images/scanner_zoom/tower_of_sauron.png" },
+    { type: "image", path: "assets/images/scanner_zoom/laser.png" },
+
     { type: "sound", path: "assets/sounds/scanner_zoom/alert.wav" },
     { type: "sound", path: "assets/sounds/scanner_zoom/beep.wav" },
     { type: "sound", path: "assets/sounds/scanner_zoom/mode_change.wav" },
     { type: "sound", path: "assets/sounds/scanner_zoom/processing.wav" },
     { type: "sound", path: "assets/sounds/scanner_zoom/scanner_start.wav" },
-    { type: "sound", path: "assets/sounds/scanner_zoom/success.wav" },
+    { type: "sound", path: "assets/sounds/scanner_zoom/gollum.wav" },
+    { type: "sound", path: "assets/sounds/scanner_zoom/whistle.wav" },
     { type: "sound", path: "assets/sounds/scanner_zoom/zoom.wav" },
+    { type: "sound", path: "assets/sounds/scanner_zoom/target_locked.wav" },
   ],
   race: [
     { type: "image", path: "assets/images/race/obstacle1.png" },
     { type: "image", path: "assets/images/race/obstacle2.png" },
     { type: "image", path: "assets/images/race/powerup1.png" },
     { type: "image", path: "assets/images/race/powerup2.png" },
-    { type: "image", path: "assets/images/race/race_track.png" },
+    { type: "image", path: "assets/images/race/race_track_1.png" },
+    { type: "image", path: "assets/images/race/race_track_2.png" },
+    { type: "image", path: "assets/images/race/race_track_3.png" },
     { type: "sound", path: "assets/sounds/race/beep.wav" },
     { type: "sound", path: "assets/sounds/race/crash.wav" },
     { type: "sound", path: "assets/sounds/race/powerup.wav" },
     { type: "sound", path: "assets/sounds/race/race_loop.wav" },
     { type: "sound", path: "assets/sounds/race/race_start.wav" },
     { type: "sound", path: "assets/sounds/race/win.wav" },
+    { type: "sound", path: "assets/sounds/race/blackhole.wav" },
   ],
   handpick: [
     { type: "sound", path: "assets/sounds/handpick/countdown.wav" },
     { type: "sound", path: "assets/sounds/handpick/go.wav" },
     { type: "sound", path: "assets/sounds/handpick/success.wav" },
     { type: "sound", path: "assets/sounds/handpick/timeout.wav" },
+    { type: "sound", path: "assets/sounds/handpick/applause.wav" },
+    { type: "sound", path: "assets/sounds/handpick/result.wav" },
+    { type: "sound", path: "assets/sounds/handpick/start.wav" },
   ],
 };
 
-// 리소스 캐시 객체 (전역 캐시로 사용)
-const resourceCache: Record<string, HTMLImageElement | HTMLAudioElement> = {};
-
-// 프리로드 유틸리티 함수
-const preloadResource = (resource: ResourceInfo): Promise<void> => {
+// 프리로드 유틸리티 함수 수정
+const preloadResource = (
+  resource: ResourceInfo,
+  cacheRef: React.RefObject<Map<string, HTMLAudioElement>>
+): Promise<void> => {
+  // cacheRef 인자 추가
   return new Promise((resolve, reject) => {
-    // 이미 캐시에 있으면 바로 완료
-    if (resourceCache[resource.path]) {
+    // --- 캐시 확인 로직 수정: Provider의 캐시 확인 ---
+    if (cacheRef.current?.has(resource.path)) {
+      // console.log(`[preloadResource] Already preloaded: ${resource.path}`);
       resolve();
       return;
     }
+    // --- 수정 끝 ---
 
     if (resource.type === "image") {
       const img = new Image();
       img.src = resource.path;
       img.onload = () => {
-        resourceCache[resource.path] = img;
+        // 이미지는 여전히 로컬 캐시 또는 다른 방식으로 관리 필요 시 여기에 로직 추가 가능
+        // 현재는 이미지 캐싱 로직은 별도로 없음 (브라우저 캐시 의존)
         resolve();
       };
       img.onerror = () => {
@@ -283,41 +327,84 @@ const preloadResource = (resource: ResourceInfo): Promise<void> => {
         reject(new Error(`이미지 로드 실패: ${resource.path}`));
       };
     } else if (resource.type === "sound") {
+      // --- 오디오 객체 생성 및 캐싱 로직 ---
+      if (!cacheRef.current) {
+        console.error("Preloaded audio cache ref is not available.");
+        reject(new Error("Preloaded audio cache ref is not available."));
+        return;
+      }
+
       const audio = new Audio();
       audio.src = resource.path;
       audio.preload = "auto";
 
-      // 사운드는 로드가 완료되면 캐시에 저장하고 완료
-      audio.onloadeddata = () => {
-        resourceCache[resource.path] = audio;
-        resolve();
-      };
-      audio.onerror = () => {
-        console.error(`오디오 로드 실패: ${resource.path}`);
-        reject(new Error(`오디오 로드 실패: ${resource.path}`));
-      };
+      const handleLoad = () => {
+        // 웜업 시도
+        audio.volume = 0; // 소리 안 나게
+        const playPromise = audio.play();
 
-      // 모바일 브라우저에서는 사용자 상호작용 없이 오디오를 로드할 수 없으므로,
-      // 일정 시간 후 성공한 것으로 간주
-      setTimeout(() => {
-        if (!resourceCache[resource.path]) {
-          resourceCache[resource.path] = audio;
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              audio.pause(); // 즉시 정지
+              audio.currentTime = 0; // 시작 위치로
+              audio.volume = 0.2; // 기본 볼륨 복원
+              // console.log(`[preloadResource] Warmed up: ${resource.path}`);
+            })
+            .catch((err) => {
+              console.warn(
+                `[preloadResource] Warm-up play failed for ${resource.path}:`,
+                err
+              );
+              // 실패해도 객체는 생성되었으므로 캐시에 저장, 볼륨 복원
+              audio.volume = 0.2;
+            })
+            .finally(() => {
+              // Provider의 캐시에 저장 (키는 경로 전체)
+              cacheRef.current?.set(resource.path, audio);
+              resolve();
+            });
+        } else {
+          // play()가 promise를 반환하지 않는 경우 (거의 없음)
+          audio.volume = 0.2; // 볼륨 복원
+          cacheRef.current?.set(resource.path, audio);
           resolve();
         }
-      }, 1000);
+        // 이벤트 리스너 정리
+        audio.removeEventListener("loadeddata", handleLoad);
+        audio.removeEventListener("error", handleError);
+      };
+
+      const handleError = () => {
+        console.error(`오디오 로드/처리 실패: ${resource.path}`);
+        // 이벤트 리스너 정리
+        audio.removeEventListener("loadeddata", handleLoad);
+        audio.removeEventListener("error", handleError);
+        reject(new Error(`오디오 로드/처리 실패: ${resource.path}`));
+      };
+
+      audio.addEventListener("loadeddata", handleLoad);
+      audio.addEventListener("error", handleError);
+      // --- 로직 끝 ---
     }
   });
 };
 
-// 모드에 맞는 리소스 일괄 프리로드
-const preloadModeResources = async (mode: AnimationMode | null) => {
-  if (!mode) return;
+// 모드에 맞는 리소스 일괄 프리로드 수정
+const preloadModeResources = async (
+  mode: AnimationMode | null,
+  cacheRef: React.RefObject<Map<string, HTMLAudioElement>>
+) => {
+  // cacheRef 인자 추가
+  if (!mode || !cacheRef) return;
 
-  console.log(`${mode} 모드 리소스 프리로딩 시작...`);
+  // console.log(`${mode} 모드 리소스 프리로딩 시작...`);
   try {
-    const resources = MODE_RESOURCES[mode];
-    await Promise.all(resources.map(preloadResource));
-    console.log(`${mode} 모드 리소스 프리로딩 완료!`);
+    const resources = MODE_RESOURCES[mode] || []; // 모드에 리소스 없으면 빈 배열
+    await Promise.all(
+      resources.map((resource) => preloadResource(resource, cacheRef))
+    ); // cacheRef 전달
+    // console.log(`${mode} 모드 리소스 프리로딩 완료!`);
   } catch (error) {
     console.error(`리소스 프리로딩 중 오류 발생:`, error);
   }
@@ -333,14 +420,24 @@ const ModalContentComponent = React.memo<{
   const [lastCapturedFrame, setLastCapturedFrame] = useState<string | null>(
     null
   );
-  const { detectedFaces, resetCountdown, ...animationState } = useAnimation(
-    websocket || null
-  );
+  const {
+    detectedFaces,
+    resetCountdown,
+    isFaceDetectionStable,
+    ...animationState
+  } = useAnimation(websocket || null);
   const cameraRef = useRef<CameraHandle>(null);
   const cameraContainerRef = useRef<HTMLDivElement>(null);
 
-  const { isSelecting, status, isSoundEnabled, setIsSoundEnabled, setStatus } =
-    useAnimationContext();
+  const {
+    isSelecting,
+    status,
+    isSoundEnabled,
+    setIsSoundEnabled,
+    setStatus,
+    setIsSelecting,
+    preloadedAudioCache, // Provider로부터 캐시 ref 가져오기
+  } = useAnimationContext();
 
   const { slotMachineActive } = animationState.getSlotMachineState();
   const { rouletteActive } = animationState.getRouletteState();
@@ -354,20 +451,19 @@ const ModalContentComponent = React.memo<{
     }
   }, [detectedFaces]);
 
-  // 활성 모드가 변경될 때 해당 모드의 리소스 프리로드
+  // 활성 모드가 변경될 때 해당 모드의 리소스 프리로드 (cacheRef 전달)
   useEffect(() => {
     const modeId = getModeId(modeName);
     if (modeId) {
-      // 연결되면 리소스 프리로드 시작
       if (connectionStatus === "connected") {
         setStatus("🔄 리소스 로딩 중...");
-        preloadModeResources(modeId).then(() => {
-          // 프리로드 완료 후 상태 업데이트
+        preloadModeResources(modeId, preloadedAudioCache).then(() => {
+          // preloadedAudioCache 전달
           setStatus("");
         });
       }
     }
-  }, [modeName, connectionStatus, setStatus]);
+  }, [modeName, connectionStatus, setStatus, preloadedAudioCache]); // preloadedAudioCache 의존성 추가
 
   const handleFrame = useCallback(
     (frame: string) => {
@@ -392,38 +488,36 @@ const ModalContentComponent = React.memo<{
   );
 
   const startAnimationDirectly = useCallback(() => {
-    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-      console.log("WebSocket not ready");
+    // 이미 애니메이션 시작 중이거나 웹소켓 준비 안 됐으면 중단
+    if (isSelecting || !websocket || websocket.readyState !== WebSocket.OPEN) {
+      console.log(
+        "WebSocket not ready or animation already selecting. Aborting."
+      );
       return;
     }
 
-    // lastCapturedFrame에서 Base64 데이터 추출
     if (!lastCapturedFrame) {
       console.log("카메라 프레임이 준비되지 않았습니다.");
       setStatus("⌛ 카메라 준비 중... 잠시 후 다시 시도해주세요.");
-      // 2초 후 상태 메시지 초기화
-      setTimeout(() => {
-        setStatus("");
-      }, 2000);
+      setTimeout(() => setStatus(""), 2000);
       return;
     }
 
-    // Base64 데이터 형식 (data:image/jpeg;base64,XXXXX)에서 실제 데이터 부분만 추출
     const base64Data = lastCapturedFrame.split(",")[1];
 
-    // 프레임 데이터가 너무 짧으면 유효하지 않음
     if (!base64Data || base64Data.length < 1000) {
       console.error("유효하지 않은 프레임 데이터");
-      // 상태 메시지 설정
       if (status !== "⚠️ 카메라 데이터 오류. 잠시 후 다시 시도해주세요.") {
         setStatus("⚠️ 카메라 데이터 오류. 잠시 후 다시 시도해주세요.");
-        // 2초 후 상태 메시지 초기화
-        setTimeout(() => {
-          setStatus("");
-        }, 2000);
+        setTimeout(() => setStatus(""), 2000);
       }
       return;
     }
+
+    // --- 중요: 웹소켓 메시지 전송 전에 isSelecting 상태를 true로 설정 ---
+    console.log("[AnimationModal] Setting isSelecting to true immediately.");
+    setIsSelecting(true);
+    // ---------------------------------------------------------------
 
     console.log(
       `[AnimationModal] 애니메이션 시작 요청 - 모드: ${getModeId(modeName)}`
@@ -438,7 +532,15 @@ const ModalContentComponent = React.memo<{
         startAnimation: true,
       })
     );
-  }, [websocket, lastCapturedFrame, modeName, status, setStatus]);
+  }, [
+    websocket,
+    lastCapturedFrame,
+    modeName,
+    status,
+    setStatus,
+    isSelecting,
+    setIsSelecting,
+  ]);
 
   const animationComponent = useMemo(() => {
     const mode = getModeId(modeName);
@@ -470,6 +572,10 @@ const ModalContentComponent = React.memo<{
         return <RaceAnimation {...animationProps} />;
       case "curtain":
         return <CurtainAnimation {...animationProps} />;
+      case "scanner":
+        return <ScannerAnimation {...animationProps} />;
+      case "handpick":
+        return <HandpickAnimation {...animationProps} />;
       default:
         return null;
     }
@@ -517,15 +623,27 @@ const ModalContentComponent = React.memo<{
 
   return (
     <>
-      <Title>
-        {status}
-        {resetCountdown !== null && status.includes("완료") && (
-          <span style={{ fontSize: "0.8em", marginLeft: "10px" }}>
-            ({resetCountdown}초 후 초기화)
-          </span>
-        )}
-        {!status && modeName}
-      </Title>
+      {/* --- 뒤로가기 버튼 추가 (isSelecting일 때만 표시) --- */}
+      {isSelecting && (
+        <BackButton onClick={onClose} title="모드 선택으로 돌아가기">
+          ←
+        </BackButton>
+      )}
+      {/* --- 추가 끝 --- */}
+
+      {/* --- Title 컴포넌트 렌더링 조건 수정 --- */}
+      {(!isSelecting || status.includes("선정 완료")) && (
+        <Title>
+          {status}
+          {resetCountdown !== null && status.includes("완료") && (
+            <span style={{ fontSize: "0.8em", marginLeft: "10px" }}>
+              ({resetCountdown}초 후 초기화)
+            </span>
+          )}
+          {!status && modeName}
+        </Title>
+      )}
+      {/* --- 수정 끝 --- */}
       <SoundToggle onClick={() => setIsSoundEnabled(!isSoundEnabled)}>
         {isSoundEnabled ? "🔊" : "🔇"}
       </SoundToggle>
@@ -545,21 +663,36 @@ const ModalContentComponent = React.memo<{
       {animationComponent}
 
       <ControlsContainer>
+        {/* --- 기존 버튼들 모두 isSelecting이 아닐 때만 표시 --- */}
         {!isSelecting && (
-          <StyledButton variant="primary" onClick={startAnimationDirectly}>
-            🔮 뽑기
-          </StyledButton>
+          <>
+            <StyledButton
+              variant="primary"
+              onClick={startAnimationDirectly}
+              disabled={!isFaceDetectionStable || isSelecting}
+              title={
+                !isFaceDetectionStable
+                  ? "안정적인 얼굴 인식이 필요합니다."
+                  : isSelecting
+                  ? "애니메이션 시작 중..."
+                  : ""
+              }
+            >
+              🔮 뽑기 {isFaceDetectionStable ? "" : "(카메라 준비 중)"}
+            </StyledButton>
+            <StyledButton variant="return" onClick={onClose}>
+              🏠 모드 선택
+            </StyledButton>
+          </>
         )}
-        <StyledButton variant="return" onClick={onClose}>
-          🏠 모드 선택
-        </StyledButton>
+        {/* --- 수정 끝 --- */}
       </ControlsContainer>
     </>
   );
 });
 
 const AnimationModal = React.memo<AnimationModalProps>(
-  ({ isOpen, onClose, websocket, modeName, frameData, connectionStatus }) => {
+  ({ isOpen, onClose, websocket, modeName, connectionStatus }) => {
     if (!isOpen) return null;
 
     const modeId = getModeId(modeName);
