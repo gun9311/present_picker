@@ -1,5 +1,4 @@
 import random
-import asyncio
 
 async def apply_roulette_effect(frame, faces, websocket, original_frame=None, is_running=lambda: True, animation_service=None, client_id=None):
     """ 룰렛 애니메이션 실행하며 발표자 선정 (WebSocket 통신 방식) """
@@ -13,8 +12,8 @@ async def apply_roulette_effect(frame, faces, websocket, original_frame=None, is
     })
     
     # 회전 관련 랜덤 값 설정 - 선형 감속 방식으로 변경
-    initial_speed = random.uniform(10, 13)  # 초기 속도
-    deceleration_constant = random.uniform(0.20, 0.30)  # 선형 감속 상수
+    initial_speed = random.uniform(11, 13)  # 초기 속도
+    deceleration_constant = random.uniform(0.10, 0.13)  # 선형 감속 상수
     direction = random.choice([-1, 1])  # 회전 방향
     
     # 얼굴 ID 매핑

@@ -3,7 +3,6 @@ from fastapi import WebSocket
 import numpy as np
 import cv2
 import base64
-import asyncio
 
 class BaseAnimation(ABC):
     async def send_frame(self, websocket: WebSocket, frame: np.ndarray):

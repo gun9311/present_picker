@@ -19,13 +19,13 @@ class AnimationService:
         """새로운 클라이언트 연결 등록"""
         self.active_clients[client_id] = websocket
         self.active_animations[client_id] = False
-        print(f"새 클라이언트 등록: {client_id}, 현재 총 {len(self.active_clients)}개 연결")
+        # print(f"새 클라이언트 등록: {client_id}, 현재 총 {len(self.active_clients)}개 연결")
         
     def unregister_client(self, client_id):
         """클라이언트 연결 해제 처리"""
         if client_id in self.active_clients:
             del self.active_clients[client_id]
-            print(f"클라이언트 등록 해제: {client_id}, 현재 총 {len(self.active_clients)}개 연결")
+            # print(f"클라이언트 등록 해제: {client_id}, 현재 총 {len(self.active_clients)}개 연결")
         
     def cleanup_resources(self, client_id):
         """클라이언트 연결 종료 시 관련 리소스 정리"""
@@ -46,7 +46,7 @@ class AnimationService:
         # 클라이언트 등록 해제 (중요: 여기서 호출)
         self.unregister_client(client_id)
             
-        print(f"클라이언트 리소스 정리 완료: {client_id}")
+        # print(f"클라이언트 리소스 정리 완료: {client_id}")
         
     async def handle_animation(self, websocket: WebSocket, data: dict):
         client_id = id(websocket)
@@ -58,7 +58,7 @@ class AnimationService:
             mode = data.get('mode')
             winner_index = data.get('winnerIndex')
             
-            print(f"[AnimationService] 클라이언트에서 애니메이션 완료 메시지 수신 - 모드: {mode}, 당첨자: {winner_index}")
+            # print(f"[AnimationService] 클라이언트에서 애니메이션 완료 메시지 수신 - 모드: {mode}, 당첨자: {winner_index}")
             
             # 애니메이션 완료 처리
             await websocket.send_json({
@@ -95,13 +95,13 @@ class AnimationService:
                     self.last_frames[client_id] = frame
                     
                     if self.active_animations[client_id] == False:
-                    # 얼굴 감지
-                        faces = detect_faces_yolo(frame)
+                    # 얼굴 감지 (비동기 호출로 변경)
+                        faces = await detect_faces_yolo(frame)
                         await self._send_faces(websocket, faces)
                     # 애니메이션 시작 - startAnimation이 true인 경우에만 얼굴 감지 확인
                     if data.get('startAnimation'):
                         self.last_frames[client_id] = frame
-                        faces = detect_faces_yolo(frame)
+                        faces = await detect_faces_yolo(frame)
                         # 얼굴이 감지되지 않은 경우 오류 메시지 전송
                         if len(faces) == 0:
                             # print("[AnimationService] 얼굴이 감지되지 않음 - 오류 메시지 전송")
@@ -117,7 +117,7 @@ class AnimationService:
                             
                             self.active_animations[client_id] = True
                             
-                            print(f"[AnimationService] {mode} 애니메이션 함수 실행")
+                            # print(f"[AnimationService] {mode} 애니메이션 함수 실행")
                             
                             # 애니메이션 실행 시 중지 함수 전달
                             # 클로저를 사용해 현재 클라이언트 ID 캡처
@@ -136,7 +136,7 @@ class AnimationService:
                                     await animation_task
                                     # 중요: 룰렛 모드에서는 클라이언트가 완료 신호를 보내므로 여기서 완료 메시지를 보내지 않음
                                     if is_running() and mode != 'roulette':  # 룰렛 예외 처리 추가
-                                        print(f"[AnimationService] {mode} 애니메이션 완료 메시지 전송")
+                                        # print(f"[AnimationService] {mode} 애니메이션 완료 메시지 전송")
                                         await websocket.send_json({
                                             'type': 'animation_complete',
                                             'mode': mode

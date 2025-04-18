@@ -91,7 +91,12 @@ async def apply_slot_machine_effect(frame, faces, websocket, original_frame=None
         'type': 'play_sound',
         'sound': 'slot_machine/winner'
     })
-    
+
+    # 잭팟 효과 시작 메시지 추가
+    await websocket.send_json({
+        'type': 'show_jackpot_effect'
+    })
+
     # 텍스트 오버레이 요청
     await websocket.send_json({
         'type': 'show_text',

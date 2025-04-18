@@ -18,17 +18,17 @@ async def apply_curtain_effect(frame, faces, websocket, original_frame=None, is_
         'mode': 'curtain'
     })
     
+    # 인트로 사운드 재생
+    await websocket.send_json({
+        'type': 'play_sound',
+        'sound': 'curtain/tada'
+    })
+    
     # 인트로 단계: 5초 카운트다운 알림
     await websocket.send_json({
         'type': 'curtain_intro',
         'duration': 5,
         'text': "🎭 커튼콜 타임! 🎭"
-    })
-    
-    # 인트로 사운드 재생
-    await websocket.send_json({
-        'type': 'play_sound',
-        'sound': 'curtain/tada'
     })
     
     # 5초 대기
@@ -42,15 +42,6 @@ async def apply_curtain_effect(frame, faces, websocket, original_frame=None, is_
         })
         
         await asyncio.sleep(1)
-    
-    # 드럼롤 사운드 재생
-    await websocket.send_json({
-        'type': 'play_sound',
-        'sound': 'curtain/drumroll',
-        'options': {
-            'loop': True
-        }
-    })
     
     # 인트로 종료 메시지 추가
     await websocket.send_json({
@@ -97,8 +88,8 @@ async def apply_curtain_effect(frame, faces, websocket, original_frame=None, is_
         # animation_service가 전달되었고 client_id가 있으면 최신 프레임 사용
         if animation_service and client_id and client_id in animation_service.last_frames:
             current_frame = animation_service.last_frames[client_id]
-            # 최신 프레임에서 얼굴 감지
-            current_faces = detect_faces_yolo(current_frame)
+            # 최신 프레임에서 얼굴 감지 (비동기 호출로 변경)
+            current_faces = await detect_faces_yolo(current_frame) # await 추가
             print(f"최신 프레임에서 얼굴 감지 결과: {current_faces}")
         
         # 최신 얼굴이 감지되었으면 그것을 사용, 아니면 초기 얼굴 사용
@@ -113,19 +104,13 @@ async def apply_curtain_effect(frame, faces, websocket, original_frame=None, is_
         selected_idx = random.randrange(len(selection_faces))
         selected_face = selection_faces[selected_idx].tolist()
         
-        # 얼굴 크기에 따른 세밀한 확대율 계산 (비율 기반)
+         # 얼굴 크기에 따른 세밀한 확대율 계산 (비율 기반)
         face_width = selected_face[2]
         face_ratio = face_width / width  # 화면 너비 대비 얼굴 비율
+        target_ratio = 0.27
 
-        if face_ratio < 0.1:
-            # 매우 작은 얼굴 (화면의 10% 미만)
-            zoom_scale = min(4.0, 1.0 / max(face_ratio, 0.05))
-        elif face_ratio < 0.2:
-            # 중간 크기 얼굴 (10%~20%)
-            zoom_scale = min(2.5, 1.0 / max(face_ratio, 0.08))
-        else:
-            # 큰 얼굴 (20% 이상)
-            zoom_scale = min(1.8, 1.0 / max(face_ratio, 0.1))
+        zoom_scale = target_ratio / max(face_ratio, 0.01)  # 너무 작은 비율 방지
+        zoom_scale = max(1.0, min(5.0, zoom_scale))  # 줌 한도 설정
         
         # 3. 선택된 얼굴 정보 전송 (줌 파라미터 추가)
         await websocket.send_json({
@@ -141,11 +126,6 @@ async def apply_curtain_effect(frame, faces, websocket, original_frame=None, is_
         await websocket.send_json({
             'type': 'play_sound',
             'sound': 'curtain/curtain_open'
-        })
-        
-        await websocket.send_json({
-            'type': 'play_sound',
-            'sound': 'curtain/spotlight'
         })
         
         # 단계별 커튼 열기 (12단계)
@@ -165,23 +145,11 @@ async def apply_curtain_effect(frame, faces, websocket, original_frame=None, is_
         
         # 4. 선택된 인물 보여주기 (3초)
         await asyncio.sleep(3.0)
-    
-    # 드럼롤 사운드 중지
-    await websocket.send_json({
-        'type': 'stop_sound',
-        'sound': 'curtain/drumroll'
-    })
-    
+        
     # 최종 결과 - 타다 사운드 재생
     await websocket.send_json({
         'type': 'play_sound',
         'sound': 'curtain/tada'
-    })
-    
-    # 박수 소리 재생
-    await websocket.send_json({
-        'type': 'play_sound',
-        'sound': 'curtain/applause'
     })
     
     # 최종 결과 메시지 전송 (줌 파라미터 추가)
