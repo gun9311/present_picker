@@ -88,7 +88,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
     # 장애물 생성 - 개수 조정 및 블랙홀 비율 제어
     obstacles = []
     # 참가자 수의 1.6배로 장애물 개수 유지
-    num_total_obstacles = int(num_participants * 1.6)
+    num_total_obstacles = int(num_participants * 1.7)
     
     # 참가자 수에 따라 블랙홀 개수 동적 조정
     if num_participants < 12:
