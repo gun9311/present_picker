@@ -27,7 +27,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
     max_lanes = 6  # 최대 레인 수는 6개로 유지
     num_participants = min(len(faces), 12)  # 최대 12명으로 확장
     visible_width = 1000  # 화면에 보이는 영역의 너비
-    track_length = visible_width * 3.3  # 화면 너비의 3배로 설정
+    track_length = visible_width * 3  # 화면 너비의 3배로 설정
     
     # 참가자 얼굴 및 ID 선택
     selected_indices = list(range(len(faces)))
@@ -54,7 +54,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
             racers.append({
                 "id": racer_counter,
                 "position": position_offset,  # 출발선 위치에 오프셋 적용
-                "speed": random.uniform(1.6, 2.6),  # 초기 속도 감소 및 다양화
+                "speed": random.uniform(1.2, 2.0),  # 초기 속도 범위 낮춤 (기존: 1.6, 2.6)
                 "lane": lane,  # 레인 번호
                 "face_index": selected_indices[racer_counter],  # 원래 얼굴 인덱스
                 "powerup_timer": 0,  # 파워업 지속 시간 (부스트용)
@@ -250,7 +250,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
             if racer["powerup_timer"] > 0:
                 racer["powerup_timer"] -= 1
                 if racer["powerup_timer"] == 0:
-                    racer["speed"] /= 2.0 # 부스트 효과 제거 (획득 시 *2.0 했으므로)
+                    racer["speed"] /= 1.8 # 부스트 효과 제거 (기존: 2.0)
 
             # 보호막 파워업 타이머 감소
             if racer["shield_timer"] > 0:
@@ -259,8 +259,8 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
                     racer["shield_active"] = False
             
             # 무작위 속도 변동
-            racer["speed"] += random.uniform(-0.2, 0.25)
-            racer["speed"] = max(1.0, min(5.0, racer["speed"]))
+            racer["speed"] += random.uniform(-0.15, 0.2) # 변동 폭 줄임 (기존: -0.2, 0.25)
+            racer["speed"] = max(0.8, min(4.0, racer["speed"])) # 최소/최대 속도도 약간 조정
             
             # --- 레이스 진행률 계산 ---
             race_progress = max(0, min(1, lead_position / finish_line)) if finish_line > 0 else 0
@@ -371,7 +371,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
                     else:
                         # 보호막 없을 때 기존 충돌 처리
                         if obstacle["type"] == 1: # 일반 장애물
-                            racer["speed"] *= 0.6  # 감속
+                            racer["speed"] *= 0.5  # 감속
                             await websocket.send_json({
                                 'type': 'race_collision',
                                 'racer_id': racer["id"],
@@ -414,7 +414,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
                         powerup["active"] = False # 파워업 비활성화
 
                         if powerup["type"] == 1: # 부스트 파워업
-                            racer["speed"] *= 2.0 # 속도 2배
+                            racer["speed"] *= 1.8 # 속도 1.5배 (기존: 2.0)
                             racer["powerup_timer"] = 90 # 부스트 지속 시간 (약 3.75초)
                             await websocket.send_json({
                                 'type': 'play_sound',
