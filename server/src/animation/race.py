@@ -54,7 +54,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
             racers.append({
                 "id": racer_counter,
                 "position": position_offset,  # 출발선 위치에 오프셋 적용
-                "speed": random.uniform(1.2, 2.0),  # 초기 속도 범위 낮춤 (기존: 1.6, 2.6)
+                "speed": random.uniform(1.0, 1.8),  # 초기 속도 범위 낮춤 (기존: 1.6, 2.6)
                 "lane": lane,  # 레인 번호
                 "face_index": selected_indices[racer_counter],  # 원래 얼굴 인덱스
                 "powerup_timer": 0,  # 파워업 지속 시간 (부스트용)
@@ -250,7 +250,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
             if racer["powerup_timer"] > 0:
                 racer["powerup_timer"] -= 1
                 if racer["powerup_timer"] == 0:
-                    racer["speed"] /= 1.8 # 부스트 효과 제거 (기존: 2.0)
+                    racer["speed"] /= 1.7 # 부스트 효과 제거 (기존: 2.0)
 
             # 보호막 파워업 타이머 감소
             if racer["shield_timer"] > 0:
@@ -259,7 +259,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
                     racer["shield_active"] = False
             
             # 무작위 속도 변동
-            racer["speed"] += random.uniform(-0.15, 0.2) # 변동 폭 줄임 (기존: -0.2, 0.25)
+            racer["speed"] += random.uniform(-0.18, 0.18) # 변동 폭 줄임 (기존: -0.2, 0.25)
             racer["speed"] = max(0.8, min(4.0, racer["speed"])) # 최소/최대 속도도 약간 조정
             
             # --- 레이스 진행률 계산 ---
@@ -414,7 +414,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
                         powerup["active"] = False # 파워업 비활성화
 
                         if powerup["type"] == 1: # 부스트 파워업
-                            racer["speed"] *= 1.8 # 속도 1.5배 (기존: 2.0)
+                            racer["speed"] *= 1.7 # 속도 1.5배 (기존: 2.0)
                             racer["powerup_timer"] = 90 # 부스트 지속 시간 (약 3.75초)
                             await websocket.send_json({
                                 'type': 'play_sound',
