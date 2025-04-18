@@ -54,7 +54,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
             racers.append({
                 "id": racer_counter,
                 "position": position_offset,  # 출발선 위치에 오프셋 적용
-                "speed": random.uniform(1.3, 1.85),  # 초기 속도 범위 낮춤 (기존: 1.6, 2.6)
+                "speed": random.uniform(1.3, 1.83),  # 초기 속도 범위 낮춤 (기존: 1.6, 2.6)
                 "lane": lane,  # 레인 번호
                 "face_index": selected_indices[racer_counter],  # 원래 얼굴 인덱스
                 "powerup_timer": 0,  # 파워업 지속 시간 (부스트용)
@@ -259,7 +259,7 @@ async def apply_race_effect(frame, faces, websocket, original_frame=None, is_run
                     racer["shield_active"] = False
             
             # 무작위 속도 변동
-            racer["speed"] += random.uniform(-0.15, 0.185) # 변동 폭 줄임 (기존: -0.2, 0.25)
+            racer["speed"] += random.uniform(-0.151, 0.183) # 변동 폭 줄임 (기존: -0.2, 0.25)
             racer["speed"] = max(0.8, min(4.0, racer["speed"])) # 최소/최대 속도도 약간 조정
             
             # --- 레이스 진행률 계산 ---
