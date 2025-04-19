@@ -1,5 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
-const isDev = require("electron-is-dev");
+const { app, BrowserWindow, ipcMain, nativeTheme } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -7,18 +6,17 @@ const admin = require("firebase-admin");
 
 // --- Firebase Admin SDK 초기화 ---
 // !!! 경로 수정 !!!
-const projectRoot = path.resolve(__dirname, "..", ".."); // 현재: client 폴더
-const correctProjectRoot = path.resolve(projectRoot, ".."); // client 폴더 밖으로 한번 더 이동 -> presenter_picker 폴더
 const serviceAccountPath = path.join(
-  correctProjectRoot, // 수정된 프로젝트 루트 사용
-  "config",
-  "firebase",
+  __dirname, // electron.js가 있는 public 폴더 기준
+  "..", // client/electron 폴더로 이동
+  "config", // client/electron/config 폴더
+  "firebase", // client/electron/config/firebase 폴더
   "service-account.json"
 );
 console.log(
   "[Main Process] 수정된 서비스 계정 키 경로 시도:",
   serviceAccountPath
-); // 수정된 경로 확인
+);
 
 let db = null;
 let mainWindow = null;
@@ -115,15 +113,21 @@ function createWindow() {
     },
   });
 
+  // --- 추가: 다크 테마 설정 시도 ---
+  nativeTheme.themeSource = "dark";
+  // --- 추가: 기본 메뉴 바 숨기기 ---
+  mainWindow.setMenuBarVisibility(false); // Windows/Linux 용
+  // mainWindow.setMenu(null); // 모든 플랫폼에서 메뉴 완전 제거 (macOS 포함) 시도 시
+
   // 개발 모드일 때는 개발 서버에서, 프로덕션 모드일 때는 빌드된 파일을 로드
   mainWindow.loadURL(
-    isDev
+    !app.isPackaged
       ? "http://localhost:3000"
       : `file://${path.join(__dirname, "../build/index.html")}`
   );
 
   // 개발 모드일 때는 개발자 도구 열기
-  if (isDev) {
+  if (!app.isPackaged) {
     mainWindow.webContents.openDevTools({ mode: "detach" });
   }
 

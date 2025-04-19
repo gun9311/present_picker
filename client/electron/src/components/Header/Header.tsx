@@ -64,7 +64,7 @@ const Header: React.FC = () => {
     <>
       <HeaderContainer>
         <LogoTitleWrapper>
-          <Logo src="/logo.png" alt="Presenter Picker" />
+          <Logo src="./logo.png" alt="Presenter Picker" />
           <Title>SPOTLIGHT - 오늘의 랜덤 뽑기</Title>
         </LogoTitleWrapper>
         <FeedbackButton onClick={handleFeedbackClick}>
