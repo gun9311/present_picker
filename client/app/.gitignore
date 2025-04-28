@@ -27,3 +27,9 @@ yarn-error.log*
 /config
 
 /dist-electron
+
+/dist
+
+/release
+
+

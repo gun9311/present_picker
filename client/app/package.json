@@ -1,9 +1,9 @@
 {
   "name": "spotlight",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "homepage": "./",
-  "main": "public/electron.js",
+  "main": "dist-electron/electron.js",
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
@@ -64,6 +64,7 @@
     "asar": true,
     "files": [
       "dist/**/*",
+      "dist-electron/**/*",
       "!dist-web/**/*",
       "node_modules/**/*",
       "config/**/*"
