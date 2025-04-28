@@ -137,14 +137,6 @@ export const useAnimation = (websocket: WebSocket | null) => {
     null
   );
 
-  // 최적화 설정값
-  const POSITION_THRESHOLD = 8; // 위치 변화 임계값 (px)
-  const SIZE_THRESHOLD = 5; // 크기 변화 임계값 (px)
-  const UPDATE_INTERVAL = 150; // 업데이트 간격 (ms)
-
-  // 마지막 업데이트 시간 추적용 ref
-  const lastUpdateTimeRef = useRef<number>(0);
-
   // 얼굴 감지 안정성 관련 상태 및 ref 추가
   const faceDetectionStartTimeRef = useRef<number | null>(null);
   const [isFaceDetectionStable, setIsFaceDetectionStable] =
@@ -153,46 +145,7 @@ export const useAnimation = (websocket: WebSocket | null) => {
   // 최적화된 얼굴 업데이트 함수
   const updateFacesOptimized = useCallback(
     (newFaces: Array<[number, number, number, number]>) => {
-      const now = Date.now();
-
-      // 스로틀링: 지정된 간격보다 짧은 시간이 지났으면 업데이트 스킵
-      if (now - lastUpdateTimeRef.current < UPDATE_INTERVAL) {
-        return;
-      }
-
-      setDetectedFaces((prevFaces) => {
-        // 얼굴 개수가 변경된 경우는 즉시 업데이트
-        if (prevFaces.length !== newFaces.length) {
-          lastUpdateTimeRef.current = now;
-          return newFaces;
-        }
-
-        // 임계값 기반 업데이트: 위치나 크기가 임계값 이상 변경되었는지 확인
-        let significantChange = false;
-
-        for (let i = 0; i < newFaces.length; i++) {
-          const [prevX, prevY, prevW, prevH] = prevFaces[i] || [0, 0, 0, 0];
-          const [newX, newY, newW, newH] = newFaces[i];
-
-          if (
-            Math.abs(prevX - newX) > POSITION_THRESHOLD ||
-            Math.abs(prevY - newY) > POSITION_THRESHOLD ||
-            Math.abs(prevW - newW) > SIZE_THRESHOLD ||
-            Math.abs(prevH - newH) > SIZE_THRESHOLD
-          ) {
-            significantChange = true;
-            break;
-          }
-        }
-
-        // 유의미한 변화가 있는 경우에만 업데이트
-        if (significantChange) {
-          lastUpdateTimeRef.current = now;
-          return newFaces;
-        }
-
-        return prevFaces; // 변화가 미미하면 이전 상태 유지
-      });
+      setDetectedFaces(newFaces);
     },
     []
   );
