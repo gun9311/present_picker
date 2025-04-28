@@ -90,7 +90,7 @@ async def apply_curtain_effect(frame, faces, websocket, original_frame=None, is_
             current_frame = animation_service.last_frames[client_id]
             # 최신 프레임에서 얼굴 감지 (비동기 호출로 변경)
             current_faces = await detect_faces_yolo(current_frame) # await 추가
-            print(f"최신 프레임에서 얼굴 감지 결과: {current_faces}")
+            # print(f"최신 프레임에서 얼굴 감지 결과: {current_faces}")
         
         # 최신 얼굴이 감지되었으면 그것을 사용, 아니면 초기 얼굴 사용
         if len(current_faces) > 0:
