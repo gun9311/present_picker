@@ -4,18 +4,6 @@ import Header from "./components/Header/Header";
 import ModeGrid from "./components/ModeGrid/ModeGrid";
 import LicenseInfo from "./components/Footer/LicenseInfo";
 
-// --- IPC 통신 위한 코드 추가 ---
-let ipcRendererInstance: Electron.IpcRenderer | null = null;
-try {
-  ipcRendererInstance = window.require("electron").ipcRenderer;
-} catch (e) {
-  console.error(
-    "ipcRenderer 로드 실패. Electron 환경이 아니거나 nodeIntegration이 꺼져있을 수 있습니다.",
-    e
-  );
-}
-// --- 여기까지 추가 ---
-
 const AppContainer = styled.div`
   background-color: #2d2d2d;
   height: 100vh;
@@ -97,54 +85,41 @@ interface UpdateInfo {
 }
 
 function App() {
-  // --- 상태 및 useEffect 추가 ---
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateNotification, setShowUpdateNotification] = useState(false);
 
   useEffect(() => {
-    if (ipcRendererInstance) {
-      console.log("[Renderer Process] update-available 리스너 등록 시도");
+    let cleanup = () => {}; // 클린업 함수 초기화
 
-      const handleUpdateAvailable = (
-        event: Electron.IpcRendererEvent,
-        info: UpdateInfo
-      ) => {
-        console.log(
-          "[Renderer Process] <<< update-available 메시지 수신! >>>",
-          info
-        );
-        setUpdateInfo(info);
-        setShowUpdateNotification(true);
-      };
+    // --- 동적 import로 변경 ---
+    const loadUpdateHandler = async () => {
+      // 빌드 시점에 결정된 환경 변수 사용
+      const platform = import.meta.env.VITE_TARGET_PLATFORM;
+      console.log("Loading update handler for platform:", platform);
 
-      // 리스너 등록
-      ipcRendererInstance.on("update-available", handleUpdateAvailable);
-      console.log("[Renderer Process] update-available 리스너 등록 완료");
+      if (platform === "electron") {
+        // Electron 타겟일 경우 electron 핸들러 로드
+        const { setupUpdates } = await import("./updateHandler.electron"); // 경로 직접 지정
+        cleanup = setupUpdates(setUpdateInfo, setShowUpdateNotification);
+      } else {
+        // 웹 타겟일 경우 web 핸들러 로드
+        const { setupUpdates } = await import("./updateHandler.web"); // 경로 직접 지정
+        cleanup = setupUpdates(setUpdateInfo, setShowUpdateNotification);
+      }
+    };
 
-      // --- 추가: 메인 프로세스로 준비 완료 메시지 전송 ---
-      console.log("[Renderer Process] >>> renderer-ready 메시지 전송 >>>");
-      ipcRendererInstance.send("renderer-ready");
-      // --- 여기까지 추가 ---
+    loadUpdateHandler();
+    // --- 여기까지 변경 ---
 
-      // 컴포넌트 언마운트 시 리스너 제거
-      return () => {
-        console.log("[Renderer Process] update-available 리스너 제거");
-        ipcRendererInstance?.removeListener(
-          "update-available",
-          handleUpdateAvailable
-        );
-      };
-    } else {
-      console.warn(
-        "[Renderer Process] ipcRenderer 사용 불가, 리스너 등록 실패"
-      );
-    }
-  }, []); // 빈 배열: 마운트 시 한 번만 실행
+    // 비동기 로드 후 클린업 함수가 설정되므로, useEffect 반환값은 그대로 둠
+    return () => {
+      cleanup();
+    };
+  }, []); // 빈 의존성 배열 유지
 
   const handleCloseNotification = () => {
     setShowUpdateNotification(false);
   };
-  // --- 여기까지 추가 ---
 
   return (
     <AppContainer>

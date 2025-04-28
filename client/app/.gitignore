@@ -26,4 +26,4 @@ yarn-error.log*
 # Service account key (sensitive)
 /config
 
-/dist
+/dist-electron

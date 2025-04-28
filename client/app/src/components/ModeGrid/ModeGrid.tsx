@@ -17,10 +17,11 @@ const ModeGrid: React.FC = () => {
   const [selectedMode, setSelectedMode] = useState<string | null>(null);
   const [connectToWebSocket, setConnectToWebSocket] = useState(false);
 
-  const WS_URL = process.env.REACT_APP_WS_URL;
+  // const WS_URL = import.meta.env.VITE_WS_URL;
+  const WS_URL = "ws://109.123.229.121/ws/animation";
 
   if (!WS_URL) {
-    throw new Error("REACT_APP_WS_URL is not defined in .env file");
+    throw new Error("VITE_WS_URL is not defined in .env file");
   }
 
   const { connectionStatus, websocket } = useWebSocket(

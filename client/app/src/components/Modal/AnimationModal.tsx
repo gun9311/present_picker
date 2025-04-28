@@ -194,6 +194,64 @@ const BackButton = styled.button`
 `;
 // --- 스타일 추가 끝 ---
 
+// --- 버튼 컨테이너 추가 ---
+const TopRightControls = styled.div`
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  gap: 15px; // 버튼 사이 간격
+  z-index: 1001;
+`;
+
+const ControlButton = styled.button`
+  background: rgba(0, 0, 0, 0.4); // 반투명 배경
+  border: none;
+  color: white;
+  font-size: 22px; // 아이콘 크기
+  cursor: pointer;
+  border-radius: 50%; // 원형 버튼
+  width: 40px; // 버튼 크기
+  height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: background-color 0.2s;
+  line-height: 1; // 아이콘 수직 정렬
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.6); // 호버 시 약간 더 진하게
+  }
+`;
+
+// --- 새 로딩/처리 중 오버레이 스타일 추가 ---
+const ProcessingIndicatorOverlay = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6); // 약간 어두운 반투명 배경
+  display: flex;
+  flex-direction: column; // 세로 배치
+  justify-content: center;
+  align-items: center;
+  z-index: 1002; // Title, 버튼들보다는 위, 모달 최상단보다는 아래
+  color: white;
+  font-size: 24px; // 텍스트 크기 증가
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.7);
+  pointer-events: none; // 뒤쪽 요소 클릭 가능하도록 (필요하다면)
+`;
+
+// (선택적) 로딩 스피너 스타일 (기존 LoadingSpinner 재활용 또는 새로 정의)
+const ProcessingSpinner = styled(LoadingSpinner)`
+  border-top-color: #ff9800; // 주황색 등으로 색상 변경 가능
+  width: 40px; // 크기 조절
+  height: 40px;
+  margin-bottom: 15px;
+`;
+// --- 스타일 추가 끝 ---
+
 interface AnimationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -420,12 +478,20 @@ const ModalContentComponent = React.memo<{
   const [lastCapturedFrame, setLastCapturedFrame] = useState<string | null>(
     null
   );
+  // --- 1. isProcessingInitialRequest 상태 추가 ---
+  const [isProcessingInitialRequest, setIsProcessingInitialRequest] =
+    useState(false);
+
+  // --- 2. useAnimation 훅에 콜백 전달 ---
   const {
     detectedFaces,
     resetCountdown,
     isFaceDetectionStable,
     ...animationState
-  } = useAnimation(websocket || null);
+  } = useAnimation(websocket || null, () =>
+    setIsProcessingInitialRequest(false)
+  ); // 콜백 전달
+
   const cameraRef = useRef<CameraHandle>(null);
   const cameraContainerRef = useRef<HTMLDivElement>(null);
 
@@ -434,14 +500,20 @@ const ModalContentComponent = React.memo<{
     status,
     isSoundEnabled,
     setIsSoundEnabled,
-    setStatus,
+    setStatus, // 여전히 다른 상태 메시지용으로 사용 가능
     setIsSelecting,
-    preloadedAudioCache, // Provider로부터 캐시 ref 가져오기
+    preloadedAudioCache,
   } = useAnimationContext();
 
   const { slotMachineActive } = animationState.getSlotMachineState();
   const { rouletteActive } = animationState.getRouletteState();
   const { raceActive } = animationState.getRaceState();
+
+  // --- 전체 화면 상태 추가 ---
+  const [isFullscreen, setIsFullscreen] = useState(
+    !!document.fullscreenElement // 초기 상태는 현재 fullscreen 상태 반영
+  );
+  // --- 여기까지 추가 ---
 
   // 얼굴 정보가 업데이트되면 Camera 컴포넌트에 전달
   useEffect(() => {
@@ -464,6 +536,21 @@ const ModalContentComponent = React.memo<{
       }
     }
   }, [modeName, connectionStatus, setStatus, preloadedAudioCache]); // preloadedAudioCache 의존성 추가
+
+  // --- 전체 화면 변경 감지 및 상태 동기화 useEffect ---
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+
+    // 클린업 함수: 컴포넌트 언마운트 시 이벤트 리스너 제거
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []); // 마운트 시 한 번만 실행
+  // --- 여기까지 추가 ---
 
   const handleFrame = useCallback(
     (frame: string) => {
@@ -488,7 +575,6 @@ const ModalContentComponent = React.memo<{
   );
 
   const startAnimationDirectly = useCallback(() => {
-    // 이미 애니메이션 시작 중이거나 웹소켓 준비 안 됐으면 중단
     if (isSelecting || !websocket || websocket.readyState !== WebSocket.OPEN) {
       console.log(
         "WebSocket not ready or animation already selecting. Aborting."
@@ -514,10 +600,12 @@ const ModalContentComponent = React.memo<{
       return;
     }
 
-    // --- 중요: 웹소켓 메시지 전송 전에 isSelecting 상태를 true로 설정 ---
+    // --- 3. 즉시 isProcessingInitialRequest 상태 true로 설정 ---
+    setIsProcessingInitialRequest(true);
+
+    // --- isSelecting 상태 변경 (이 위치는 유지) ---
     console.log("[AnimationModal] Setting isSelecting to true immediately.");
     setIsSelecting(true);
-    // ---------------------------------------------------------------
 
     console.log(
       `[AnimationModal] 애니메이션 시작 요청 - 모드: ${getModeId(modeName)}`
@@ -541,6 +629,25 @@ const ModalContentComponent = React.memo<{
     isSelecting,
     setIsSelecting,
   ]);
+
+  // --- 전체 화면 토글 함수 ---
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      // documentElement는 전체 HTML 문서를 나타냄
+      document.documentElement
+        .requestFullscreen()
+        .catch((err) =>
+          console.error(
+            `Fullscreen request failed: ${err.message} (${err.name})`
+          )
+        );
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  }, []);
+  // --- 여기까지 추가 ---
 
   const animationComponent = useMemo(() => {
     const mode = getModeId(modeName);
@@ -589,6 +696,10 @@ const ModalContentComponent = React.memo<{
     resetCountdown,
   ]);
 
+  // --- 플랫폼 확인 변수 추가 ---
+  const isWebPlatform = import.meta.env.VITE_TARGET_PLATFORM === "web";
+  // --- 여기까지 추가 ---
+
   // 연결 중일 때는 로딩 화면 표시
   if (connectionStatus === "connecting") {
     return (
@@ -621,6 +732,7 @@ const ModalContentComponent = React.memo<{
     );
   }
 
+  // --- 4. 처리 중 오버레이 조건부 렌더링 ---
   return (
     <>
       {/* --- 뒤로가기 버튼 추가 (isSelecting일 때만 표시) --- */}
@@ -644,9 +756,35 @@ const ModalContentComponent = React.memo<{
         </Title>
       )}
       {/* --- 수정 끝 --- */}
-      <SoundToggle onClick={() => setIsSoundEnabled(!isSoundEnabled)}>
-        {isSoundEnabled ? "🔊" : "🔇"}
-      </SoundToggle>
+
+      {/* --- 오른쪽 상단 컨트롤 버튼들 --- */}
+      <TopRightControls>
+        {/* 웹 플랫폼일 때만 전체 화면 버튼 표시 */}
+        {isWebPlatform && (
+          <ControlButton
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "전체 화면 종료" : "전체 화면 시작"}
+          >
+            {/* 아이콘: 전체 화면이면 축소 아이콘, 아니면 확대 아이콘 */}
+            {isFullscreen ? "↘️" : "↗️"}
+          </ControlButton>
+        )}
+        <ControlButton
+          onClick={() => setIsSoundEnabled(!isSoundEnabled)}
+          title={isSoundEnabled ? "소리 끄기" : "소리 켜기"}
+        >
+          {isSoundEnabled ? "🔊" : "🔇"}
+        </ControlButton>
+      </TopRightControls>
+      {/* --- 여기까지 추가 --- */}
+
+      {/* 처리 중 오버레이 */}
+      {isProcessingInitialRequest && (
+        <ProcessingIndicatorOverlay>
+          <ProcessingSpinner />
+          <span>얼굴 확인 및 요청 처리 중...</span>
+        </ProcessingIndicatorOverlay>
+      )}
 
       {!slotMachineActive && !rouletteActive && !raceActive && (
         <CameraContainer ref={cameraContainerRef}>

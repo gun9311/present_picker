@@ -12,13 +12,41 @@ import {
 } from "./types";
 import { useAnimationContext } from "./AnimationContext";
 
+// --- 1. HandpickState 인터페이스를 여기로 이동 ---
+interface HandpickState {
+  handpickActive: boolean;
+  handpickFaces: Array<{
+    face: FaceCoordinates;
+    expression_score: number;
+    is_candidate: boolean;
+  }>;
+  handpickStage: string;
+  handpickProgress: number;
+  expressionMode: string;
+  remainingSeconds: number | null;
+  resultFace: FaceCoordinates | null;
+  resultExpressionName: string;
+  resultMessage: string;
+  handpickRanking: Array<{
+    face: FaceCoordinates;
+    rank: number;
+    score: number;
+  }> | null;
+  handpickCountdown: number | null;
+  finalHandpickFrame: string | null;
+}
+// --- 이동 끝 ---
+
 // 모드별 메시지 핸들러 타입 정의
 type ModeMessageHandler = (message: WebSocketMessage) => void;
 
 // 안정성 확인 임계 시간 (밀리초)
 const FACE_DETECTION_STABILITY_THRESHOLD = 500;
 
-export const useAnimation = (websocket: WebSocket | null) => {
+export const useAnimation = (
+  websocket: WebSocket | null,
+  onAnimationReady?: () => void
+) => {
   const {
     currentMode,
     setIsSelecting,
@@ -150,12 +178,17 @@ export const useAnimation = (websocket: WebSocket | null) => {
     []
   );
 
-  // 공통 메시지 핸들러
+  // --- 수정: messageHandlerRef 정의 위치 변경 및 타입 명시 ---
+  const messageHandlerRef = useRef<(eventDataString: string) => void>(() => {});
+  // --- 수정 끝 ---
+
+  // useCallback 안의 로직은 그대로 두되, 의존성 배열을 비워서 최초 렌더링 시에만 생성되도록 함
+  // 또는 필요한 최소한의 안정적인 의존성만 남김 (예: setter 함수들)
+  // 여기서는 일단 빈 배열로 시도하여 함수의 참조 자체를 안정화
   const handleCommonMessages = useCallback(
     (message: WebSocketMessage) => {
       switch (message.type) {
         case "animation_frame":
-          // 커튼 모드 추가: 커튼 모드에서는 프레임 업데이트 필요 없음
           if (
             !slotMachineActive &&
             !rouletteActive &&
@@ -213,15 +246,12 @@ export const useAnimation = (websocket: WebSocket | null) => {
         case "faces":
           updateFacesOptimized(message.faces);
 
-          // 얼굴 감지 안정성 로직 추가
           if (message.faces.length > 0) {
             const now = Date.now();
             if (faceDetectionStartTimeRef.current === null) {
               faceDetectionStartTimeRef.current = now;
-              // 얼굴 감지 시작 시 바로 안정 상태는 아님
               setIsFaceDetectionStable(false);
             } else {
-              // 임계 시간 이상 감지 유지 시 안정 상태로 변경
               if (
                 now - faceDetectionStartTimeRef.current >=
                 FACE_DETECTION_STABILITY_THRESHOLD
@@ -230,7 +260,6 @@ export const useAnimation = (websocket: WebSocket | null) => {
               }
             }
           } else {
-            // 얼굴 감지 안되면 시작 시간 및 안정 상태 초기화
             faceDetectionStartTimeRef.current = null;
             setIsFaceDetectionStable(false);
           }
@@ -259,7 +288,6 @@ export const useAnimation = (websocket: WebSocket | null) => {
           console.log(
             `[useAnimation] animation_complete 메시지 수신, 모드: ${message.mode}`
           );
-          // 애니메이션 완료 시 모드별 초기화 함수 호출
           handleAnimationComplete(message.mode);
           break;
 
@@ -267,10 +295,8 @@ export const useAnimation = (websocket: WebSocket | null) => {
           console.error("WebSocket 에러:", message.message);
           setStatus(`오류: ${message.message}`);
 
-          // 얼굴 감지 관련 오류 시 특별한 처리
           if (message.message?.includes("얼굴이 없습니다")) {
             setStatus("❌ 감지된 얼굴이 없습니다. 잠시 후 다시 시도해주세요.");
-            // 2초 후 상태 메시지 초기화
             setTimeout(() => {
               setStatus("");
               setIsSelecting(false);
@@ -280,9 +306,6 @@ export const useAnimation = (websocket: WebSocket | null) => {
       }
     },
     [
-      slotMachineActive,
-      rouletteActive,
-      raceActive,
       setCurrentFrame,
       playSound,
       stopSound,
@@ -290,43 +313,15 @@ export const useAnimation = (websocket: WebSocket | null) => {
       addTextOverlay,
       setIsSelecting,
       setStatus,
-      currentMode,
-      curtainState.isActive,
-      updateFacesOptimized,
       setIsFaceDetectionStable,
+      updateFacesOptimized,
     ]
   );
 
-  // --- HandpickState 인터페이스 정의 추가 ---
-  interface HandpickState {
-    handpickActive: boolean;
-    handpickFaces: Array<{
-      face: FaceCoordinates; // FaceCoordinates 타입 사용
-      expression_score: number;
-      is_candidate: boolean;
-    }>;
-    handpickStage: string;
-    handpickProgress: number;
-    expressionMode: string;
-    remainingSeconds: number | null;
-    resultFace: FaceCoordinates | null; // FaceCoordinates 타입 사용
-    resultExpressionName: string;
-    resultMessage: string;
-    handpickRanking: Array<{
-      face: FaceCoordinates; // FaceCoordinates 타입 사용
-      rank: number;
-      score: number;
-    }> | null;
-    handpickCountdown: number | null;
-    finalHandpickFrame: string | null; // 여기에 finalHandpickFrame 포함
-  }
-  // --- 인터페이스 정의 끝 ---
-
-  // 애니메이션 완료 시 모드별 초기화를 처리하는 공통 함수 추가
+  // --- 추가: handleAnimationComplete도 useCallback으로 감싸기 ---
   const handleAnimationComplete = useCallback(
     (mode: string) => {
       console.log(`[handleAnimationComplete] 시작, 모드: ${mode}`);
-      // 모든 모드에 공통으로 적용되는 카운트다운 로직
       setResetCountdown(6);
 
       const countdownInterval = setInterval(() => {
@@ -339,42 +334,31 @@ export const useAnimation = (websocket: WebSocket | null) => {
         });
       }, 1000);
 
-      // 6초 후 모드별 초기화 실행
       setTimeout(() => {
         console.log(
           `[handleAnimationComplete] 6초 타이머 완료, 모드: ${mode} 초기화 실행`
         );
-        // 공통 초기화 작업
         setFrozenFrame(null);
         setStatus("");
         setIsSelecting(false);
         setResetCountdown(null);
         clearInterval(countdownInterval);
 
-        // 얼굴 감지 안정성 상태 초기화 추가
         faceDetectionStartTimeRef.current = null;
         setIsFaceDetectionStable(false);
 
-        // --- 추가: 애니메이션 완료 시 관련 루프 사운드 중지 ---
         console.log(
           `[handleAnimationComplete] Stopping sounds for mode: ${mode}`
         );
-        // 각 모드별로 루프 가능성이 있는 사운드를 중지시킵니다.
-        // (정확한 사운드 파일명은 assets/sounds/ 폴더 구조 확인 필요)
         if (mode === "roulette") {
           stopSound("roulette/spin_loop");
-          stopSound("roulette/spin_slow"); // 느려지는 소리도 멈춤
+          stopSound("roulette/spin_slow");
         } else if (mode === "race") {
-          // race_loop는 서버에서도 멈추지만, 안전하게 여기서도 멈춤
           stopSound("race/race_loop");
         } else if (mode === "scanner") {
-          // 스캐너 모드에서 루프되는 사운드가 있다면 추가 (예: processing 등)
-          stopSound("scanner_zoom/processing"); // processing 사운드가 루프될 경우
+          stopSound("scanner_zoom/processing");
         }
-        // 다른 모드들도 필요시 추가
-        // --- 추가 끝 ---
 
-        // 모드별 특수 초기화 작업
         switch (mode) {
           case "slot":
             setSlotMachineActive(false);
@@ -382,7 +366,6 @@ export const useAnimation = (websocket: WebSocket | null) => {
             setVisibleSlots([]);
             setSelectedFace(null);
             setJackpotActive(false);
-            // 슬롯머신은 일반적으로 완료 시점에 루프 사운드가 없음
             break;
 
           case "roulette":
@@ -413,7 +396,6 @@ export const useAnimation = (websocket: WebSocket | null) => {
               isActive: false,
               zoomParams: null,
             }));
-            // 커튼콜은 일반적으로 완료 시점에 루프 사운드가 없음
             break;
 
           case "scanner":
@@ -442,15 +424,15 @@ export const useAnimation = (websocket: WebSocket | null) => {
             setHandpickRanking(null);
             setHandpickCountdown(null);
             setFinalHandpickFrame(null);
-            // 핸드픽은 일반적으로 완료 시점에 루프 사운드가 없음
             break;
         }
       }, 6000);
     },
-    [setStatus, setIsSelecting, setIsFaceDetectionStable, stopSound] // stopSound 의존성 추가
+    [setStatus, setIsSelecting, setIsFaceDetectionStable, stopSound]
   );
+  // --- 수정 끝 ---
 
-  // 슬롯머신 메시지 핸들러
+  // --- 각 모드별 핸들러 함수 정의 (useCallback) ---
   const handleSlotMachineMessages = useCallback(
     (message: WebSocketMessage) => {
       switch (message.type) {
@@ -464,6 +446,7 @@ export const useAnimation = (websocket: WebSocket | null) => {
           setCurrentSlotFaces([]);
           setVisibleSlots([]);
           setJackpotActive(false);
+          onAnimationReady?.();
           break;
 
         case "animation_step":
@@ -479,10 +462,9 @@ export const useAnimation = (websocket: WebSocket | null) => {
           break;
       }
     },
-    [setCurrentFrame]
+    [setCurrentFrame, onAnimationReady]
   );
 
-  // 룰렛 메시지 핸들러
   const handleRouletteMessages = useCallback(
     (message: WebSocketMessage) => {
       switch (message.type) {
@@ -495,19 +477,17 @@ export const useAnimation = (websocket: WebSocket | null) => {
           }
           setRouletteFaces(message.faces);
 
-          // 애니메이션 매개변수가 있으면 저장
           if (message.animation_params) {
-            // @ts-ignore - 타입스크립트 오류 방지를 위한 임시 처리
             setRouletteParams(message.animation_params);
             animationRunningRef.current = true;
           }
+          onAnimationReady?.();
           break;
       }
     },
-    [setCurrentFrame]
+    [setCurrentFrame, onAnimationReady]
   );
 
-  // 레이스 메시지 핸들러
   const handleRaceMessages = useCallback(
     (message: WebSocketMessage) => {
       switch (message.type) {
@@ -522,6 +502,7 @@ export const useAnimation = (websocket: WebSocket | null) => {
           setRaceFaces(message.faces);
           setRaceFaceIndices(message.face_indices);
           setRaceCamera(message.track_config.camera_position);
+          onAnimationReady?.();
           break;
 
         case "race_items":
@@ -534,7 +515,6 @@ export const useAnimation = (websocket: WebSocket | null) => {
           break;
 
         case "race_update":
-          // 레이서 상태 업데이트 시 shield_active, shield_timer 포함
           setRacerPositions(message.racers);
           setRaceObstacles(message.obstacles);
           setRacePowerups(message.powerups);
@@ -542,19 +522,9 @@ export const useAnimation = (websocket: WebSocket | null) => {
           break;
 
         case "race_collision":
-          // is_elimination 플래그에 따른 처리는 RaceAnimation 컴포넌트에서 직접 수행
-          // 여기서 상태를 변경할 필요는 없음 (시각 효과와 직접 관련)
-          // 타입 검사 예시 (필요시):
-          // const collisionMessage = message as RaceCollisionMessage;
-          // if (collisionMessage.is_elimination) {
-          //   console.log(`Racer ${collisionMessage.racer_id} eliminated!`);
-          // }
           break;
 
         case "race_powerup":
-          // 파워업 효과 처리 (실제 효과는 RaceAnimation 컴포넌트에서 처리)
-          // message.powerup_type (1: 부스트, 2: 보호막) 정보를 활용 가능
-          // console.log(`Racer ${message.racer_id} got powerup type ${message.powerup_type}`);
           break;
 
         case "race_result":
@@ -562,10 +532,9 @@ export const useAnimation = (websocket: WebSocket | null) => {
           break;
       }
     },
-    [setFrozenFrame, setCurrentFrame] // 의존성 배열은 변경 필요 없음
+    [setFrozenFrame, setCurrentFrame, onAnimationReady]
   );
 
-  // 커튼 모드 메시지 핸들러를 useCallback으로 래핑
   const handleCurtainMessage = useCallback(
     (message: WebSocketMessage) => {
       switch (message.type) {
@@ -584,6 +553,7 @@ export const useAnimation = (websocket: WebSocket | null) => {
               resultActive: false,
               zoomParams: null,
             }));
+            onAnimationReady?.();
           }
           break;
 
@@ -637,158 +607,161 @@ export const useAnimation = (websocket: WebSocket | null) => {
           break;
       }
     },
-    [setCurtainState]
-  ); // 의존성 배열에 setCurtainState 추가
+    [setCurtainState, onAnimationReady]
+  );
 
-  // 스캐너 메시지 핸들러
-  const handleScannerMessage = useCallback((message: WebSocketMessage) => {
-    switch (message.type) {
-      case "animation_start":
-        if (message.mode === "scanner") {
-          setScannerActive(true);
-          setScannerTargetPoints([]);
-          setScannerTargetFace(null);
-          setScannerZoomScale(1);
-          setScannerStage("");
-          setScannerProgress(0);
-          setScannerStatusText("");
-          setScannerShowBorder(false);
-          setScannerResultMessage("");
-          setScannerIsFinalTarget(false);
-        }
-        break;
+  const handleScannerMessage = useCallback(
+    (message: WebSocketMessage) => {
+      switch (message.type) {
+        case "animation_start":
+          if (message.mode === "scanner") {
+            setScannerActive(true);
+            setScannerTargetPoints([]);
+            setScannerTargetFace(null);
+            setScannerZoomScale(1);
+            setScannerStage("");
+            setScannerProgress(0);
+            setScannerStatusText("");
+            setScannerShowBorder(false);
+            setScannerResultMessage("");
+            setScannerIsFinalTarget(false);
+            onAnimationReady?.();
+          }
+          break;
 
-      case "scanner_target":
-        setScannerTargetPoints((prev) => [...prev, message.target_point]);
-        setScannerProgress(message.progress);
-        setScannerStage(message.stage);
-        setScannerStatusText("중간계 관찰 중...");
-        break;
+        case "scanner_target":
+          setScannerTargetPoints((prev) => [...prev, message.target_point]);
+          setScannerProgress(message.progress);
+          setScannerStage(message.stage);
+          setScannerStatusText("중간계 관찰 중...");
+          break;
 
-      case "scanner_transition":
-        setScannerStatusText(message.text);
-        break;
+        case "scanner_transition":
+          setScannerStatusText(message.text);
+          break;
 
-      case "scanner_face_target":
-        setScannerTargetFace(message.face);
-        setScannerIsFinalTarget(message.is_final);
-        setScannerStage(message.stage);
-        setScannerStatusText(
-          message.is_final ? "대상 포착 완료" : "의지 분석 중..."
-        );
-        break;
-
-      case "scanner_zoom":
-        setScannerTargetFace(message.face);
-        setScannerZoomScale(message.zoom_scale);
-        setScannerStage(message.stage);
-        setScannerProgress(message.progress);
-        setScannerStatusText(
-          message.stage === "first_zoom"
-            ? `사우론의 시선 집중: ${Math.round(message.progress)}%`
-            : `최종 시선 집중: ${Math.round(message.progress)}%`
-        );
-        setScannerShowBorder(!!message.show_border);
-        break;
-
-      case "scanner_result":
-        // 타겟 얼굴이 없는 경우에도 결과 메시지 처리 (실패 메시지)
-        if (message.face) {
+        case "scanner_face_target":
           setScannerTargetFace(message.face);
-        }
-        setScannerResultMessage(message.message);
-        setScannerStage("result"); // 결과 단계 표시를 위한 상태 추가
-        break;
-
-      case "scanner_camera_pan":
-        setScannerTargetFace(message.face);
-        setScannerStage(message.stage);
-        setScannerProgress(message.progress);
-        setScannerStatusText("대상 분석 중...");
-        // 카메라 패닝에 필요한 오프셋 정보 저장
-        setCameraPanOffset({
-          x: message.offset_x,
-          y: message.offset_y,
-        });
-        break;
-    }
-  }, []);
-
-  // 핸들픽 메시지 핸들러 추가
-  const handleHandpickMessage = useCallback((message: WebSocketMessage) => {
-    switch (message.type) {
-      case "animation_start":
-        if (message.mode === "handpick") {
-          setHandpickActive(true);
-          setHandpickFaces([]);
-          setHandpickStage("start");
-          setHandpickProgress(0);
-          setExpressionMode("");
-          setRemainingSeconds(null);
-          setResultFace(null);
-          setResultExpressionName("");
-          setResultMessage("");
-          setHandpickRanking(null);
-          setHandpickCountdown(null);
-        }
-        break;
-
-      case "handpick_start":
-        setHandpickStage("calibration");
-        setHandpickCountdown(null);
-        break;
-
-      case "handpick_calibration_complete":
-        setHandpickStage("waiting");
-        // <<< 제거 또는 주석 처리: expressionMode는 progress에서 먼저 설정될 수 있음
-        // setExpressionMode(message.expression_mode);
-        setRemainingSeconds(message.measurement_time || 7);
-
-        // 카운트다운 타이머 시작
-        const countdownInterval = setInterval(() => {
-          setRemainingSeconds((prev) => {
-            if (prev === null || prev <= 1) {
-              clearInterval(countdownInterval);
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-        break;
-
-      case "handpick_progress":
-        setHandpickFaces(message.faces);
-        setHandpickStage(message.stage);
-        setHandpickProgress(message.progress);
-        setHandpickCountdown(message.countdown ?? null);
-        // <<< 추가: progress 메시지에서도 expressionMode 업데이트
-        if (message.expression_mode) {
-          setExpressionMode(message.expression_mode);
-        }
-        break;
-
-      case "handpick_result":
-        setResultFace(message.face);
-        setResultExpressionName(message.expression_name);
-        setResultMessage(message.message);
-        setHandpickRanking(message.ranking);
-        setHandpickStage("result");
-        setRemainingSeconds(null);
-        setHandpickCountdown(null);
-        if (message.result_frame) {
-          setFinalHandpickFrame(
-            `data:image/jpeg;base64,${message.result_frame}`
+          setScannerIsFinalTarget(message.is_final);
+          setScannerStage(message.stage);
+          setScannerStatusText(
+            message.is_final ? "대상 포착 완료" : "의지 분석 중..."
           );
-          console.log("Received and set final handpick frame.");
-        } else {
-          console.warn("Final handpick frame not received in result message.");
-          setFinalHandpickFrame(null);
-        }
-        break;
-    }
-  }, []);
+          break;
 
-  // messageHandlers를 useMemo로 감싸서 불필요한 재생성 방지
+        case "scanner_zoom":
+          setScannerTargetFace(message.face);
+          setScannerZoomScale(message.zoom_scale);
+          setScannerStage(message.stage);
+          setScannerProgress(message.progress);
+          setScannerStatusText(
+            message.stage === "first_zoom"
+              ? `사우론의 시선 집중: ${Math.round(message.progress)}%`
+              : `최종 시선 집중: ${Math.round(message.progress)}%`
+          );
+          setScannerShowBorder(!!message.show_border);
+          break;
+
+        case "scanner_result":
+          if (message.face) {
+            setScannerTargetFace(message.face);
+          }
+          setScannerResultMessage(message.message);
+          setScannerStage("result");
+          break;
+
+        case "scanner_camera_pan":
+          setScannerTargetFace(message.face);
+          setScannerStage(message.stage);
+          setScannerProgress(message.progress);
+          setScannerStatusText("대상 분석 중...");
+          setCameraPanOffset({
+            x: message.offset_x,
+            y: message.offset_y,
+          });
+          break;
+      }
+    },
+    [onAnimationReady]
+  );
+
+  const handleHandpickMessage = useCallback(
+    (message: WebSocketMessage) => {
+      switch (message.type) {
+        case "animation_start":
+          if (message.mode === "handpick") {
+            setHandpickActive(true);
+            setHandpickFaces([]);
+            setHandpickStage("start");
+            setHandpickProgress(0);
+            setExpressionMode("");
+            setRemainingSeconds(null);
+            setResultFace(null);
+            setResultExpressionName("");
+            setResultMessage("");
+            setHandpickRanking(null);
+            setHandpickCountdown(null);
+            onAnimationReady?.();
+          }
+          break;
+
+        case "handpick_start":
+          setHandpickStage("calibration");
+          setHandpickCountdown(null);
+          break;
+
+        case "handpick_calibration_complete":
+          setHandpickStage("waiting");
+          setRemainingSeconds(message.measurement_time || 7);
+
+          const countdownInterval = setInterval(() => {
+            setRemainingSeconds((prev) => {
+              if (prev === null || prev <= 1) {
+                clearInterval(countdownInterval);
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+          break;
+
+        case "handpick_progress":
+          setHandpickFaces(message.faces);
+          setHandpickStage(message.stage);
+          setHandpickProgress(message.progress);
+          setHandpickCountdown(message.countdown ?? null);
+          if (message.expression_mode) {
+            setExpressionMode(message.expression_mode);
+          }
+          break;
+
+        case "handpick_result":
+          setResultFace(message.face);
+          setResultExpressionName(message.expression_name);
+          setResultMessage(message.message);
+          setHandpickRanking(message.ranking);
+          setHandpickStage("result");
+          setRemainingSeconds(null);
+          setHandpickCountdown(null);
+          if (message.result_frame) {
+            setFinalHandpickFrame(
+              `data:image/jpeg;base64,${message.result_frame}`
+            );
+            console.log("Received and set final handpick frame.");
+          } else {
+            console.warn(
+              "Final handpick frame not received in result message."
+            );
+            setFinalHandpickFrame(null);
+          }
+          break;
+      }
+    },
+    [onAnimationReady]
+  );
+  // --- 핸들러 정의 끝 ---
+
+  // --- 2. messageHandlers 정의를 여기로 이동 ---
   const messageHandlers = useMemo<Record<AnimationMode, ModeMessageHandler>>(
     () => ({
       slot: handleSlotMachineMessages,
@@ -807,22 +780,15 @@ export const useAnimation = (websocket: WebSocket | null) => {
       handleHandpickMessage,
     ]
   );
+  // --- 이동 끝 ---
 
-  // 웹소켓 핸들러를 위한 ref 추가
-  const messageHandlerRef = useRef<(event: MessageEvent) => void>(() => {});
-
-  // 웹소켓 메시지 핸들러 등록
+  // --- 추가: handleCommonMessages의 최신 버전을 ref에 저장 ---
   useEffect(() => {
-    if (!websocket) return;
-
-    // 핸들러 함수를 ref에 저장
-    messageHandlerRef.current = (event: MessageEvent) => {
+    messageHandlerRef.current = (eventDataString: string) => {
       try {
-        const message: WebSocketMessage = JSON.parse(event.data);
-        // 공통 메시지 처리
+        const message: WebSocketMessage = JSON.parse(eventDataString);
         handleCommonMessages(message);
 
-        // 현재 모드에 따른 특정 메시지 처리
         if (currentMode && messageHandlers[currentMode]) {
           messageHandlers[currentMode](message);
         }
@@ -830,21 +796,25 @@ export const useAnimation = (websocket: WebSocket | null) => {
         console.error("Error parsing websocket message:", error);
       }
     };
+  }, [handleCommonMessages, currentMode, messageHandlers]);
+  // --- 수정 끝 ---
 
-    // 실제 이벤트 리스너는 ref의 값을 사용하는 안정적인 함수
+  // --- useEffect: 웹소켓 메시지 핸들러 등록 ---
+  useEffect(() => {
+    if (!websocket) return;
+
     const stableHandler = (event: MessageEvent) =>
-      messageHandlerRef.current(event);
+      messageHandlerRef.current(event.data);
 
-    console.log("[useAnimation] 웹소켓 메시지 핸들러 등록");
+    console.log("[useAnimation] 웹소켓 메시지 핸들러 등록 (stable ref)");
     websocket.addEventListener("message", stableHandler);
 
     return () => {
-      console.log("[useAnimation] 웹소켓 메시지 핸들러 제거");
+      console.log("[useAnimation] 웹소켓 메시지 핸들러 제거 (stable ref)");
       websocket.removeEventListener("message", stableHandler);
     };
-  }, [websocket, handleCommonMessages, currentMode, messageHandlers]); // 필요한 의존성 추가
+  }, [websocket]);
 
-  // 모드별로 필요한 상태 반환
   const getSlotMachineState = () => ({
     slotMachineActive,
     currentSlotFaces,
@@ -875,7 +845,6 @@ export const useAnimation = (websocket: WebSocket | null) => {
     raceCamera,
   });
 
-  // 커튼 모드 상태 반환 함수 수정
   const getCurtainState = () => ({
     curtainActive: curtainState.isActive,
     curtainPosition: curtainState.curtainPosition,
@@ -889,7 +858,6 @@ export const useAnimation = (websocket: WebSocket | null) => {
     zoomParams: curtainState.zoomParams,
   });
 
-  // getScannerState 함수 추가
   const getScannerState = () => ({
     scannerActive,
     scannerTargetPoints,
@@ -904,9 +872,7 @@ export const useAnimation = (websocket: WebSocket | null) => {
     cameraPanOffset,
   });
 
-  // getHandpickState 함수 개선 (명시적 반환 타입 사용)
   const getHandpickState = (): HandpickState => ({
-    // HandpickState 타입 명시
     handpickActive,
     handpickFaces,
     handpickStage,
@@ -918,10 +884,9 @@ export const useAnimation = (websocket: WebSocket | null) => {
     resultMessage,
     handpickRanking,
     handpickCountdown,
-    finalHandpickFrame, // 이 속성이 타입 정의에 포함됨
+    finalHandpickFrame,
   });
 
-  // 상태 선택 함수
   const getModeState = () => {
     switch (currentMode) {
       case "slot":
@@ -947,7 +912,6 @@ export const useAnimation = (websocket: WebSocket | null) => {
     isFaceDetectionStable,
     ...getModeState(),
 
-    // 필요한 경우 직접 특정 모드 상태 접근을 위한 게터 함수들
     getSlotMachineState,
     getRouletteState,
     getRaceState,

@@ -119,12 +119,18 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false); // Windows/Linux 용
   // mainWindow.setMenu(null); // 모든 플랫폼에서 메뉴 완전 제거 (macOS 포함) 시도 시
 
-  // 개발 모드일 때는 개발 서버에서, 프로덕션 모드일 때는 빌드된 파일을 로드
-  mainWindow.loadURL(
-    !app.isPackaged
-      ? "http://localhost:3000"
-      : `file://${path.join(__dirname, "../build/index.html")}`
-  );
+  // --- 수정: 개발 서버 URL 로드 방식 변경 ---
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL; // Vite가 주입해주는 환경 변수
+  const loadURL = !app.isPackaged
+    ? devServerUrl // 개발 모드에서는 Vite 개발 서버 URL 사용
+    : `file://${path.join(__dirname, "../dist/index.html")}`; // 프로덕션: Vite 빌드 결과 경로(dist/index.html) 확인!
+
+  if (!loadURL) {
+    console.error("[Main Process] Cannot determine URL to load!");
+    return;
+  }
+  console.log(`[Main Process] Loading URL: ${loadURL}`);
+  mainWindow.loadURL(loadURL);
 
   // 개발 모드일 때는 개발자 도구 열기
   if (!app.isPackaged) {
