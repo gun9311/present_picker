@@ -28,7 +28,7 @@ yarn-error.log*
 
 /dist-electron
 
-/dist
+/dist*
 
 /release
 
