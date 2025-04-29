@@ -6,7 +6,7 @@ router = APIRouter()
 animation_service = AnimationService()
 
 # 최대 동시 접속자 수 정의
-MAX_CONNECTIONS = 16
+MAX_CONNECTIONS = 8
 
 # 로거 설정 (선택 사항, 디버깅에 유용)
 logging.basicConfig(level=logging.INFO)

@@ -258,7 +258,7 @@ interface AnimationModalProps {
   websocket?: WebSocket | null;
   modeName?: string;
   frameData?: string;
-  connectionStatus: "connecting" | "connected" | "disconnected" | "server_busy";
+  connectionStatus: "connecting" | "connected" | "disconnected";
 }
 
 // 모드 이름을 AnimationMode 타입으로 변환하는 헬퍼 함수
@@ -473,7 +473,7 @@ const ModalContentComponent = React.memo<{
   modeName?: string;
   websocket?: WebSocket | null;
   onClose: () => void;
-  connectionStatus: "connecting" | "connected" | "disconnected" | "server_busy";
+  connectionStatus: "connecting" | "connected" | "disconnected";
 }>(({ modeName, websocket, onClose, connectionStatus }) => {
   const [lastCapturedFrame, setLastCapturedFrame] = useState<string | null>(
     null
@@ -704,10 +704,7 @@ const ModalContentComponent = React.memo<{
   if (connectionStatus === "connecting") {
     return (
       <>
-        {/* Title 렌더링 로직은 그대로 두거나 필요에 따라 조정 */}
-        {(!isSelecting || status.includes("선정 완료")) && (
-          <Title>{modeName}</Title>
-        )}
+        <Title>{modeName}</Title>
         <LoadingOverlay>
           <LoadingSpinner />
           <LoadingText>서버에 연결 중입니다...</LoadingText>
@@ -716,24 +713,13 @@ const ModalContentComponent = React.memo<{
     );
   }
 
-  // 3. 연결 실패 또는 서버 혼잡 시 메시지 분기 처리
-  if (
-    connectionStatus === "disconnected" ||
-    connectionStatus === "server_busy"
-  ) {
-    const errorMessage =
-      connectionStatus === "server_busy"
-        ? "현재 서버가 혼잡하여 접속할 수 없습니다.\n잠시 후 다시 시도해주세요."
-        : "서버 연결에 실패했습니다.";
-
+  // 연결 실패 시 오류 메시지 표시
+  if (connectionStatus === "disconnected") {
     return (
       <>
         <Title>{modeName}</Title>
         <LoadingOverlay>
-          {/* 에러 메시지를 줄바꿈(\n) 포함하여 표시하기 위해 white-space 스타일 추가 */}
-          <LoadingText style={{ whiteSpace: "pre-line" }}>
-            {errorMessage}
-          </LoadingText>
+          <LoadingText>서버 연결에 실패했습니다.</LoadingText>
           <StyledButton
             variant="return"
             onClick={onClose}
