@@ -488,6 +488,7 @@ const ModalContentComponent = React.memo<{
   const cameraContainerRef = useRef<HTMLDivElement>(null);
 
   const {
+    currentMode,
     isSelecting,
     status,
     isSoundEnabled,
@@ -504,6 +505,12 @@ const ModalContentComponent = React.memo<{
   const [isFullscreen, setIsFullscreen] = useState(
     !!document.fullscreenElement
   );
+
+  // --- 상태 가져오기 수정 ---
+  const curtainState = animationState.getCurtainState();
+  const scannerState = animationState.getScannerState();
+  const handpickState = animationState.getHandpickState(); // 핸드픽 상태 가져오기
+  // --- 수정 끝 ---
 
   useEffect(() => {
     if (isSelecting && cameraRef.current && detectedFaces.length >= 0) {
@@ -666,6 +673,7 @@ const ModalContentComponent = React.memo<{
     websocket,
     cameraContainerRef,
     resetCountdown,
+    animationState,
   ]);
 
   const isWebPlatform = import.meta.env.VITE_TARGET_PLATFORM === "web";
@@ -673,6 +681,35 @@ const ModalContentComponent = React.memo<{
   const handleClientStabilityChange = useCallback((isStable: boolean) => {
     setClientFaceStable(isStable);
   }, []);
+
+  // --- 수정: shouldSendFrameNow 계산 로직 수정 ---
+  const shouldSendFrameContinuouslyForOtherModes =
+    currentMode !== "slot" &&
+    currentMode !== "roulette" &&
+    currentMode !== "race";
+
+  const isSendingFrameForCurtainSelection =
+    currentMode === "curtain" ? curtainState.isSendingFrameForSelection : false;
+
+  const isSendingFrameForScannerTargeting =
+    currentMode === "scanner"
+      ? scannerState.isSendingFrameForScannerTargeting
+      : false;
+
+  // --- 추가: 핸드픽 프레임 전송 상태 가져오기 ---
+  const isSendingFrameForHandpickDetection =
+    currentMode === "handpick"
+      ? handpickState.isSendingFrameForHandpickDetection
+      : false;
+  // --- 추가 끝 ---
+
+  const shouldSendFrameNow =
+    isSelecting &&
+    ((currentMode === "curtain" && isSendingFrameForCurtainSelection) ||
+      (currentMode === "scanner" && isSendingFrameForScannerTargeting) ||
+      (currentMode === "handpick" && isSendingFrameForHandpickDetection));
+  // 슬롯, 룰렛, 레이스는 뽑기 시점 외에는 보내지 않음
+  // --- 수정 끝 ---
 
   if (connectionStatus === "connecting") {
     return (
@@ -757,6 +794,7 @@ const ModalContentComponent = React.memo<{
             ref={cameraRef}
             faces={isSelecting ? detectedFaces : []}
             onStabilityChange={handleClientStabilityChange}
+            shouldSendFrameNow={shouldSendFrameNow}
           />
         </CameraContainer>
       )}

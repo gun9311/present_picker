@@ -79,10 +79,10 @@ async def apply_scanner_zoom_effect(frame, initial_faces, websocket, original_fr
     })
     
     # 4단계: 타겟 발견 전환
-    # await websocket.send_json({
-    #     'type': 'scanner_transition',
-    #     'text': "운명의 제물이 발견되었습니다!"
-    # })
+    await websocket.send_json({
+        'type': 'scanner_transition',
+        'text': "운명의 제물이 발견되었습니다!"
+    })
     
     await asyncio.sleep(0.5)
     

@@ -9,6 +9,7 @@ import {
   RacePowerup,
   RaceParticipant,
   FaceCoordinates,
+  CurtainUpdateMessage,
 } from "./types";
 import { useAnimationContext } from "./AnimationContext";
 
@@ -34,6 +35,7 @@ interface HandpickState {
   }> | null;
   handpickCountdown: number | null;
   finalHandpickFrame: string | null;
+  isSendingFrameForHandpickDetection: boolean;
 }
 // --- 이동 끝 ---
 
@@ -105,17 +107,32 @@ export const useAnimation = (
   const [resetCountdown, setResetCountdown] = useState<number | null>(null);
 
   // 커튼 애니메이션 상태 추가
-  const [curtainState, setCurtainState] = useState({
+  interface CurtainState {
+    isActive: boolean;
+    curtainPosition: number;
+    selectedFace: FaceCoordinates | null;
+    introText: string;
+    countdownValue: number;
+    resultText: string;
+    showBorder: boolean;
+    introActive: boolean;
+    resultActive: boolean;
+    zoomParams: { scale: number; duration: number } | null;
+    isSendingFrameForSelection: boolean;
+  }
+
+  const [curtainState, setCurtainState] = useState<CurtainState>({
     isActive: false,
     curtainPosition: 1.0, // 1: 완전히 열림, 0: 완전히 닫힘
-    selectedFace: null as [number, number, number, number] | null,
+    selectedFace: null,
     introText: "",
     countdownValue: 0,
     resultText: "",
     showBorder: false,
     introActive: false,
     resultActive: false,
-    zoomParams: null as { scale: number; duration: number } | null,
+    zoomParams: null,
+    isSendingFrameForSelection: false,
   });
 
   // 스캐너 상태 추가
@@ -134,6 +151,12 @@ export const useAnimation = (
   const [scannerResultMessage, setScannerResultMessage] = useState("");
   const [scannerIsFinalTarget, setScannerIsFinalTarget] = useState(false);
   const [cameraPanOffset, setCameraPanOffset] = useState({ x: 0, y: 0 });
+  // --- 추가: 스캐너 프레임 전송 상태 ---
+  const [
+    isSendingFrameForScannerTargeting,
+    setIsSendingFrameForScannerTargeting,
+  ] = useState(false);
+  // --- 추가 끝 ---
 
   // 핸들픽 모드 상태 추가
   const [handpickActive, setHandpickActive] = useState<boolean>(false);
@@ -164,6 +187,12 @@ export const useAnimation = (
   const [finalHandpickFrame, setFinalHandpickFrame] = useState<string | null>(
     null
   );
+  // --- 추가: 핸드픽 프레임 전송 상태 ---
+  const [
+    isSendingFrameForHandpickDetection,
+    setIsSendingFrameForHandpickDetection,
+  ] = useState(false);
+  // --- 추가 끝 ---
 
   // 얼굴 감지 안정성 관련 상태 및 ref 추가
   const faceDetectionStartTimeRef = useRef<number | null>(null);
@@ -395,6 +424,7 @@ export const useAnimation = (
               ...prev,
               isActive: false,
               zoomParams: null,
+              isSendingFrameForSelection: false,
             }));
             break;
 
@@ -410,6 +440,9 @@ export const useAnimation = (
             setScannerResultMessage("");
             setScannerIsFinalTarget(false);
             setCameraPanOffset({ x: 0, y: 0 });
+            // --- 추가: 스캐너 프레임 전송 상태 초기화 ---
+            setIsSendingFrameForScannerTargeting(false);
+            // --- 추가 끝 ---
             break;
 
           case "handpick":
@@ -424,6 +457,9 @@ export const useAnimation = (
             setHandpickRanking(null);
             setHandpickCountdown(null);
             setFinalHandpickFrame(null);
+            // --- 추가: 핸드픽 프레임 전송 상태 초기화 ---
+            setIsSendingFrameForHandpickDetection(false);
+            // --- 추가 끝 ---
             break;
         }
       }, 6000);
@@ -552,6 +588,7 @@ export const useAnimation = (
               introActive: false,
               resultActive: false,
               zoomParams: null,
+              isSendingFrameForSelection: false,
             }));
             onAnimationReady?.();
           }
@@ -573,9 +610,12 @@ export const useAnimation = (
           break;
 
         case "curtain_update":
+          const curtainUpdateMessage = message as CurtainUpdateMessage;
           setCurtainState((prev) => ({
             ...prev,
-            curtainPosition: message.position,
+            curtainPosition: curtainUpdateMessage.position,
+            isSendingFrameForSelection:
+              curtainUpdateMessage.state === "closing",
           }));
           break;
 
@@ -584,6 +624,7 @@ export const useAnimation = (
             ...prev,
             selectedFace: message.face,
             zoomParams: message.zoom_params || null,
+            isSendingFrameForSelection: false,
           }));
           break;
 
@@ -596,6 +637,7 @@ export const useAnimation = (
             resultActive: true,
             introActive: false,
             zoomParams: message.zoom_params || prev.zoomParams,
+            isSendingFrameForSelection: false,
           }));
           break;
 
@@ -625,6 +667,9 @@ export const useAnimation = (
             setScannerShowBorder(false);
             setScannerResultMessage("");
             setScannerIsFinalTarget(false);
+            // --- 추가: 스캐너 프레임 전송 상태 초기화 ---
+            setIsSendingFrameForScannerTargeting(false);
+            // --- 추가 끝 ---
             onAnimationReady?.();
           }
           break;
@@ -637,10 +682,16 @@ export const useAnimation = (
           break;
 
         case "scanner_transition":
-          setScannerStatusText(message.text);
+          // --- 추가: 프레임 전송 시작 ---
+          setIsSendingFrameForScannerTargeting(true);
+          // --- 추가 끝 ---
+          // setScannerStatusText(message.text); // User mentioned not using the text
           break;
 
         case "scanner_face_target":
+          // --- 추가: 프레임 전송 중지 ---
+          setIsSendingFrameForScannerTargeting(false);
+          // --- 추가 끝 ---
           setScannerTargetFace(message.face);
           setScannerIsFinalTarget(message.is_final);
           setScannerStage(message.stage);
@@ -701,6 +752,9 @@ export const useAnimation = (
             setResultMessage("");
             setHandpickRanking(null);
             setHandpickCountdown(null);
+            // --- 추가: 핸드픽 프레임 전송 상태 초기화 ---
+            setIsSendingFrameForHandpickDetection(false);
+            // --- 추가 끝 ---
             onAnimationReady?.();
           }
           break;
@@ -733,6 +787,31 @@ export const useAnimation = (
           if (message.expression_mode) {
             setExpressionMode(message.expression_mode);
           }
+          // --- 추가: 카운트다운 기반 프레임 전송 시작 ---
+          if (
+            message.countdown !== undefined &&
+            message.countdown !== null &&
+            message.countdown <= 3
+          ) {
+            if (!isSendingFrameForHandpickDetection) {
+              // 상태 변경 시에만 로그/설정
+              console.log(
+                "[useAnimation] Handpick countdown <= 3, starting frame sending."
+              );
+              setIsSendingFrameForHandpickDetection(true);
+            }
+          }
+          // --- 추가 끝 ---
+          break;
+
+        case "handpick_detection_end":
+          if (isSendingFrameForHandpickDetection) {
+            // 상태 변경 시에만 로그/설정
+            console.log(
+              "[useAnimation] Received handpick_detection_end, stopping frame sending."
+            );
+            setIsSendingFrameForHandpickDetection(false);
+          }
           break;
 
         case "handpick_result":
@@ -754,10 +833,18 @@ export const useAnimation = (
             );
             setFinalHandpickFrame(null);
           }
+          // --- 추가: 결과 수신 시에도 확실히 전송 중지 (안전장치) ---
+          if (isSendingFrameForHandpickDetection) {
+            console.log(
+              "[useAnimation] Received handpick_result while sending frames, stopping frame sending (safety)."
+            );
+            setIsSendingFrameForHandpickDetection(false);
+          }
+          // --- 추가 끝 ---
           break;
       }
     },
-    [onAnimationReady]
+    [onAnimationReady, isSendingFrameForHandpickDetection]
   );
   // --- 핸들러 정의 끝 ---
 
@@ -856,6 +943,7 @@ export const useAnimation = (
     introActive: curtainState.introActive,
     resultActive: curtainState.resultActive,
     zoomParams: curtainState.zoomParams,
+    isSendingFrameForSelection: curtainState.isSendingFrameForSelection,
   });
 
   const getScannerState = () => ({
@@ -870,6 +958,9 @@ export const useAnimation = (
     resultMessage: scannerResultMessage,
     isFinalTarget: scannerIsFinalTarget,
     cameraPanOffset,
+    // --- 추가: 상태 반환 ---
+    isSendingFrameForScannerTargeting,
+    // --- 추가 끝 ---
   });
 
   const getHandpickState = (): HandpickState => ({
@@ -885,6 +976,7 @@ export const useAnimation = (
     handpickRanking,
     handpickCountdown,
     finalHandpickFrame,
+    isSendingFrameForHandpickDetection,
   });
 
   const getModeState = () => {

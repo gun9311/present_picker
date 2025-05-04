@@ -58,6 +58,7 @@ export interface CameraProps {
   faces?: Array<[number, number, number, number]>; // [x, y, width, height]
   isConnected?: boolean;
   onStabilityChange?: (isStable: boolean) => void;
+  shouldSendFrameNow?: boolean;
 }
 
 // 외부에서 호출할 수 있는 메서드 타입 정의
@@ -68,7 +69,14 @@ export interface CameraHandle {
 
 const Camera = forwardRef<CameraHandle, CameraProps>(
   (
-    { onFrame, isActive, faces = [], isConnected = false, onStabilityChange },
+    {
+      onFrame,
+      isActive,
+      faces = [],
+      isConnected = false,
+      onStabilityChange,
+      shouldSendFrameNow = false,
+    },
     ref
   ) => {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -86,6 +94,17 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
     const stabilityTimerRef = useRef<NodeJS.Timeout | null>(null);
     const isStableRef = useRef<boolean>(false);
     const FACE_DETECTION_STABILITY_THRESHOLD = 500;
+
+    const shouldSendFrameNowRef = useRef(shouldSendFrameNow);
+    const facesPropRef = useRef(faces);
+
+    useEffect(() => {
+      shouldSendFrameNowRef.current = shouldSendFrameNow;
+    }, [shouldSendFrameNow]);
+
+    useEffect(() => {
+      facesPropRef.current = faces;
+    }, [faces]);
 
     const { currentMode, isSelecting } = useAnimationContext();
 
@@ -133,7 +152,8 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
         isActive &&
         videoRef.current
       ) {
-        startClientFaceDetection();
+        // startClientFaceDetection 호출은 메인 useEffect에서 관리하도록 변경 고려
+        // 여기서는 조건 확인만
       }
     }, [isSelecting, modelsLoaded, isActive]);
 
@@ -148,7 +168,9 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
       ctx.strokeStyle = "#00ff00";
       ctx.lineWidth = 2;
 
-      const facesToDraw = isSelecting ? faces : prevFacesRef.current;
+      const facesToDraw = isSelecting
+        ? facesPropRef.current
+        : prevFacesRef.current;
 
       if (facesToDraw.length > 0) {
         facesToDraw.forEach(([x, y, w, h]) => {
@@ -163,9 +185,15 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
         updateFaceFrames: (
           newFaces: Array<[number, number, number, number]>
         ) => {
-          if (isActive && isSelecting) {
-            drawFaces();
-          }
+          // 이 함수는 isSelecting=true일 때 서버에서 받은 얼굴 정보를
+          // Camera 내부 상태(prevFacesRef)에 반영하는 용도로 사용될 수 있음
+          // 하지만 현재 로직에서는 isSelecting=true일 때 faces prop을 사용하므로
+          // 이 함수의 역할이 모호함. 필요 없다면 제거 고려.
+          // 만약 isSelecting=true일 때도 prevFacesRef를 사용한다면 여기서 업데이트.
+          // prevFacesRef.current = newFaces;
+          // if (isActive && isSelecting) { // isSelecting=true일 때 그릴지 여부 결정
+          //   drawFaces();
+          // }
         },
         captureCurrentFrame: (): string | null => {
           const video = videoRef.current;
@@ -248,7 +276,6 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
       faceapi.matchDimensions(canvas, displaySize);
 
       const detections = await faceapi.detectAllFaces(video, detectorOptions);
-
       const resizedDetections = faceapi.resizeResults(detections, displaySize);
 
       const detectedFaceBoxes = resizedDetections.map((d) => {
@@ -271,13 +298,6 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
             onStabilityChange?.(true);
             stabilityTimerRef.current = null;
           }, FACE_DETECTION_STABILITY_THRESHOLD);
-        } else if (stabilityTimerRef.current && isStableRef.current) {
-          // 이미 안정상태가 true 이고 타이머도 돌고 있다면 (이 경우는 거의 없음)
-          // 타이머가 완료되기 전에 얼굴 인식이 끊겼다가 다시 시작된 경우일 수 있음
-          // 이 경우 타이머를 재시작하지 않고 안정 상태 유지
-        } else if (!stabilityTimerRef.current && isStableRef.current) {
-          // 이미 안정된 상태 (true)이고 타이머가 없음 (정상)
-          // 아무것도 안함
         }
       } else {
         if (stabilityTimerRef.current) {
@@ -308,49 +328,31 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
     }, [detectFacesClientSide]);
 
     const captureAndSendFrame = useCallback(() => {
-      // <<< 로그 추가: captureAndSendFrame 호출 및 상태 확인 >>>
-      // console.log(`[captureAndSendFrame] Called. isActive: ${isActive}, isConnected: ${isConnected}, isSelecting: ${isSelecting}, currentMode: ${currentMode}`);
-
-      // isSelecting이 false이면 즉시 중단
       if (!isActive || !isConnected || !isSelecting) {
         if (frameRequestRef.current)
           cancelAnimationFrame(frameRequestRef.current);
         frameRequestRef.current = null;
-        // console.log("[captureAndSendFrame] Aborted (inactive, disconnected, or not selecting).");
         return;
       }
 
       const video = videoRef.current;
       const canvas = canvasRef.current;
 
-      // 비디오나 캔버스가 준비되지 않았으면 다음 프레임 요청
       if (!video || !canvas || video.readyState < video.HAVE_METADATA) {
         frameRequestRef.current = requestAnimationFrame(captureAndSendFrame);
-        // console.log("[captureAndSendFrame] Waiting for video/canvas.");
         return;
       }
 
       const now = Date.now();
-      // 마지막 캡처 후 충분한 시간이 지나지 않았으면 다음 프레임 요청
       if (now - lastCaptureTime.current < 150) {
         frameRequestRef.current = requestAnimationFrame(captureAndSendFrame);
-        // console.log("[captureAndSendFrame] Skipping due to interval.");
         return;
       }
 
-      // --- 프레임 전송 조건 추가 ---
-      const shouldSendFrameContinuously =
-        currentMode !== "slot" &&
-        currentMode !== "roulette" &&
-        currentMode !== "race";
-
-      // console.log(`[captureAndSendFrame] shouldSendFrameContinuously: ${shouldSendFrameContinuously}`);
-
-      if (shouldSendFrameContinuously) {
+      if (shouldSendFrameNowRef.current) {
         try {
           const ctx = canvas.getContext("2d");
           if (ctx) {
-            // 캔버스 크기가 비디오 크기와 다르면 조정 (기존 로직 유지)
             if (
               canvas.width !== video.videoWidth ||
               canvas.height !== video.videoHeight
@@ -362,13 +364,12 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = "high";
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const frame = canvas.toDataURL("image/jpeg", 0.85); // 프레임 캡처
-            const base64Data = frame.split(",")[1]; // Base64 데이터 추출
+            const frame = canvas.toDataURL("image/jpeg", 0.85);
+            const base64Data = frame.split(",")[1];
 
             if (base64Data && base64Data.length > 10000) {
-              // console.log(`[captureAndSendFrame] Sending frame for mode: ${currentMode}`);
-              onFrame?.(base64Data); // onFrame 콜백 호출 (프레임 전송)
-              lastCaptureTime.current = now; // 마지막 캡처 시간 업데이트
+              onFrame?.(base64Data);
+              lastCaptureTime.current = now;
             } else {
               console.warn(
                 "캡처된 프레임 데이터가 너무 작거나 유효하지 않습니다:",
@@ -380,17 +381,13 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
           console.error("프레임 캡처 중 오류:", error);
         }
       } else {
-        // console.log(`[captureAndSendFrame] Skipping frame send for mode: ${currentMode}`);
+        lastCaptureTime.current = now;
       }
-      // --- 조건 추가 끝 ---
 
-      // 다음 프레임 요청 (루프 계속)
       frameRequestRef.current = requestAnimationFrame(captureAndSendFrame);
-    }, [isActive, onFrame, isConnected, isSelecting, currentMode]); // currentMode 의존성 추가
+    }, [isActive, onFrame, isConnected, isSelecting]);
 
-    // --- 메인 카메라 제어 useEffect ---
     useEffect(() => {
-      // <<< 로그 추가: useEffect 실행 및 의존성 값 확인 >>>
       console.log(
         `[Camera Effect Triggered] isActive: ${isActive}, isConnected: ${isConnected}, isSelecting: ${isSelecting}`
       );
@@ -398,7 +395,6 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
       let currentStream: MediaStream | null = null;
 
       const startCamera = async () => {
-        // <<< 로그 추가: 카메라 시작 시도 >>>
         console.log("[Camera Effect] Attempting to start camera...");
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
@@ -410,12 +406,10 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
           });
 
           if (videoRef.current) {
-            // <<< 로그 추가: 스트림 할당 >>>
             console.log("[Camera Effect] Assigning stream to video element.");
             videoRef.current.srcObject = stream;
             currentStream = stream;
             videoRef.current.playsInline = true;
-            videoRef.current.style.transform = "translate3d(0, 0, 0)";
 
             videoRef.current.onloadedmetadata = () => {
               const video = videoRef.current;
@@ -430,7 +424,6 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
                 console.log("Video metadata loaded, dimensions set.");
 
                 if (modelsLoadedRef.current && !isSelecting) {
-                  // <<< 로그 추가: 클라이언트 감지 시작 호출 >>>
                   console.log(
                     "[Camera Effect] Calling startClientFaceDetection from onloadedmetadata."
                   );
@@ -439,31 +432,22 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
               }
 
               setTimeout(() => {
-                // <<< 로그 추가: 비디오 재생 시도 >>>
                 console.log("[Camera Effect] Attempting to play video.");
                 video
                   ?.play()
                   .catch((e) => console.error("Video play error:", e));
 
                 if (isActive && isConnected && isSelecting) {
-                  // <<< 로그 추가: 프레임 캡처 시작 호출 (isSelecting=true) >>>
                   console.log(
                     "[Camera Effect] Calling captureAndSendFrame from timeout (isSelecting=true)."
                   );
-                  captureAndSendFrame();
-                } else if (
-                  isActive &&
-                  !isSelecting &&
-                  modelsLoadedRef.current
-                ) {
-                  // <<< 로그 추가: 클라이언트 감지 활성 확인 >>>
+                  if (!frameRequestRef.current) {
+                    frameRequestRef.current =
+                      requestAnimationFrame(captureAndSendFrame);
+                  }
+                } else if (isActive && !isSelecting) {
                   console.log(
-                    "[Camera Effect] Client-side face detection is active (from timeout)."
-                  );
-                } else {
-                  // <<< 로그 추가: 캡처/감지 시작 안 함 >>>
-                  console.log(
-                    `[Camera Effect] Not starting capture/detection (isActive: ${isActive}, isConnected: ${isConnected}, isSelecting: ${isSelecting}, modelsLoaded: ${modelsLoadedRef.current})`
+                    "[Camera Effect] Client face detection should be running."
                   );
                 }
               }, 300);
@@ -475,7 +459,6 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
       };
 
       const stopCamera = () => {
-        // <<< 로그 추가: 카메라 중지 시도 >>>
         console.log("[Camera Effect] Stopping camera...");
         if (frameRequestRef.current) {
           cancelAnimationFrame(frameRequestRef.current);
@@ -496,67 +479,59 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
         }
         prevFacesRef.current = [];
 
+        if (currentStream) {
+          currentStream.getTracks().forEach((track) => track.stop());
+        }
         if (videoRef.current) {
           videoRef.current.srcObject = null;
         }
-        if (currentStream) {
-          currentStream.getTracks().forEach((track) => track.stop());
-          currentStream = null;
-        }
+        currentStream = null;
       };
 
       if (isActive) {
-        // <<< 로그 추가: startCamera 호출 결정 >>>
         console.log("[Camera Effect] isActive is true, calling startCamera()");
         startCamera();
       } else {
-        // <<< 로그 추가: stopCamera 호출 결정 >>>
         console.log("[Camera Effect] isActive is false, calling stopCamera()");
         stopCamera();
       }
 
-      // isSelecting 상태가 변경될 때 captureAndSendFrame 시작/중단 로직
-      if (isActive && isConnected && isSelecting) {
-        console.log(
-          "[Camera Effect] isSelecting is true, ensuring captureAndSendFrame starts/continues."
-        );
-        // 이미 실행 중이 아닐 경우에만 시작
-        if (!frameRequestRef.current) {
-          frameRequestRef.current = requestAnimationFrame(captureAndSendFrame);
-        }
-      } else {
-        // isSelecting이 false가 되면 프레임 전송 루프 중단
-        if (frameRequestRef.current) {
-          console.log(
-            "[Camera Effect] isSelecting is false, cancelling captureAndSendFrame loop."
-          );
-          cancelAnimationFrame(frameRequestRef.current);
-          frameRequestRef.current = null;
+      if (isActive) {
+        if (isSelecting) {
+          if (clientFaceDetectionIntervalRef.current) {
+            clearInterval(clientFaceDetectionIntervalRef.current);
+            clientFaceDetectionIntervalRef.current = null;
+          }
+          if (isConnected && !frameRequestRef.current) {
+            frameRequestRef.current =
+              requestAnimationFrame(captureAndSendFrame);
+          }
+        } else {
+          if (frameRequestRef.current) {
+            cancelAnimationFrame(frameRequestRef.current);
+            frameRequestRef.current = null;
+          }
+          if (
+            modelsLoadedRef.current &&
+            !clientFaceDetectionIntervalRef.current
+          ) {
+            startClientFaceDetection();
+          }
         }
       }
 
-      // --- 클린업 함수 ---
       return () => {
-        // <<< 로그 추가: 클린업 함수 실행 >>>
         console.log("[Camera Effect] Cleanup function running...");
         stopCamera();
-        // 컴포넌트 언마운트 시 타이머 정리
         if (stabilityTimerRef.current) {
           clearTimeout(stabilityTimerRef.current);
-          stabilityTimerRef.current = null;
         }
-        // <<< 클린업 함수 내에서도 frameRequestRef 정리 확인 >>>
-        if (frameRequestRef.current) {
-          cancelAnimationFrame(frameRequestRef.current);
-          frameRequestRef.current = null;
-        }
-        // <<< 로그 추가: 클린업 완료 >>>
         console.log("[Camera Effect] Cleanup function finished.");
       };
     }, [
       isActive,
       isConnected,
-      isSelecting, // isSelecting 의존성 유지하여 상태 변경 감지
+      isSelecting,
       captureAndSendFrame,
       startClientFaceDetection,
     ]);

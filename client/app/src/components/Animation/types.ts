@@ -382,6 +382,12 @@ export interface HandpickCalibrationCompleteMessage
   measurement_time: number;
 }
 
+// --- 추가: 핸드픽 감지 종료 메시지 ---
+export interface HandpickDetectionEndMessage extends BaseWebSocketMessage {
+  type: "handpick_detection_end";
+}
+// --- 추가 끝 ---
+
 // --- 잭팟 효과 메시지 타입 추가 ---
 export interface ShowJackpotEffectMessage extends BaseWebSocketMessage {
   type: "show_jackpot_effect";
@@ -389,6 +395,34 @@ export interface ShowJackpotEffectMessage extends BaseWebSocketMessage {
 
 // 얼굴 좌표 타입 추가
 export type FaceCoordinates = [number, number, number, number];
+
+// 핸드픽 상태 인터페이스 정의 (기존 useAnimation.ts 에서 이동/정의되었다고 가정)
+// 또는 useAnimation.ts 내부에 정의되어 있다면 해당 위치 수정
+interface HandpickState {
+  handpickActive: boolean;
+  handpickFaces: Array<{
+    face: FaceCoordinates;
+    expression_score: number;
+    is_candidate: boolean;
+  }>;
+  handpickStage: string;
+  handpickProgress: number;
+  expressionMode: string;
+  remainingSeconds: number | null;
+  resultFace: FaceCoordinates | null;
+  resultExpressionName: string;
+  resultMessage: string;
+  handpickRanking: Array<{
+    face: FaceCoordinates;
+    rank: number;
+    score: number;
+  }> | null;
+  handpickCountdown: number | null;
+  finalHandpickFrame: string | null;
+  // --- 추가: 핸드픽 프레임 전송 상태 ---
+  isSendingFrameForHandpickDetection: boolean;
+  // --- 추가 끝 ---
+}
 
 // 모든 웹소켓 메시지 타입의 유니온 타입 업데이트
 export type WebSocketMessage =
@@ -432,4 +466,5 @@ export type WebSocketMessage =
   | HandpickStartMessage
   | HandpickCalibrationCompleteMessage
   | HandpickProgressMessage
-  | HandpickResultMessage;
+  | HandpickResultMessage
+  | HandpickDetectionEndMessage;

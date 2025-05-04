@@ -250,7 +250,6 @@ async def apply_handpick_effect(frame, initial_faces, websocket, original_frame=
 
     await websocket.send_json({'type': 'animation_start', 'mode': 'handpick'})
 
-    # detection_mode 리스트에서 "refreshing_wink" 제거
     detection_mode = random.choice(["open_mouth", "big_smile", "surprise", "ugly_face"])
     expression_detector = ExpressionDetector()
 
@@ -288,22 +287,25 @@ async def apply_handpick_effect(frame, initial_faces, websocket, original_frame=
     else:
         baseline_frame = frame.copy() # Fallback
 
-    # 초기 얼굴 감지 (후속 감지 루프의 시작점) (비동기 호출로 변경)
-    last_detected_faces = await detect_faces_yolo(baseline_frame) # await 추가
+    # 초기 얼굴 감지 (후속 감지 루프의 시작점)
+    last_detected_faces = await detect_faces_yolo(baseline_frame)
     if len(last_detected_faces) == 0:
         print("⚠️ 초기 프레임에서 얼굴 감지 실패. 핸드픽 로직 중단 가능성.")
         last_detected_faces = initial_faces # 일단 initial_faces로 시도
 
+    # --- 추가: 마지막 YOLO 성공 시 프레임 저장 변수 ---
+    frame_for_last_yolo = baseline_frame.copy() # 초기값은 baseline
+    # --- 추가 끝 ---
+
     await websocket.send_json({
-        'type': 'handpick_calibration_complete', # 이름은 유지하되, 실제 보정은 없음
+        'type': 'handpick_calibration_complete',
         'expression_mode': detection_mode,
-        'measurement_time': 10 # 측정 시간 (초)
+        'measurement_time': 10
     })
 
     # --- 표정 변화 감지 루프 (10초) ---
     detection_time = 10
     start_time = asyncio.get_event_loop().time()
-    # last_detected_faces 는 위에서 초기화됨
     last_time_notice = -1
 
     while asyncio.get_event_loop().time() - start_time < detection_time:
@@ -327,8 +329,8 @@ async def apply_handpick_effect(frame, initial_faces, websocket, original_frame=
         else:
              current_frame = baseline_frame # Fallback
 
-        # 실시간 얼굴 감지 (비동기 호출로 변경)
-        current_faces_in_loop = await detect_faces_yolo(current_frame) # await 추가
+        # 실시간 얼굴 감지
+        current_faces_in_loop = await detect_faces_yolo(current_frame)
 
         if len(current_faces_in_loop) == 0: # 현재 프레임에 얼굴 없으면 스킵
             await websocket.send_json({
@@ -340,7 +342,11 @@ async def apply_handpick_effect(frame, initial_faces, websocket, original_frame=
             await asyncio.sleep(0.1)
             continue # 다음 루프 반복으로
 
-        last_detected_faces = current_faces_in_loop # 유효한 얼굴 정보 업데이트
+        # --- 수정: YOLO 성공 시 프레임 저장 ---
+        # 유효한 얼굴 정보 업데이트 및 해당 프레임 저장
+        last_detected_faces = current_faces_in_loop
+        frame_for_last_yolo = current_frame.copy() # 현재 성공한 프레임을 저장
+        # --- 수정 끝 ---
 
         # 얼굴별 표정 점수 계산 (현재 프레임 기준)
         face_data = []
@@ -349,24 +355,18 @@ async def apply_handpick_effect(frame, initial_faces, websocket, original_frame=
         has_candidates = False
 
         for idx, (x, y, w, h) in enumerate(current_faces_in_loop):
-            # get_face_landmarks 비동기 호출로 변경
-            landmarks = await get_face_landmarks(current_frame, int(x), int(y), int(w), int(h)) # await 추가
+            landmarks = await get_face_landmarks(current_frame, int(x), int(y), int(w), int(h))
             score = 0.0
             if landmarks is not None:
-                # 현재 프레임 점수 계산 (누적/스무딩 없음)
                 score = expression_detector.get_expression_score(idx, landmarks, detection_mode)
-
-                # 현재 루프 내 최고 점수 업데이트
                 if score > current_loop_max_score:
                     current_loop_max_score = score
                     current_loop_candidate_idx = idx
                     has_candidates = True
-            # else: score is 0.0
 
-            # 클라이언트 전송 데이터 구성 (현재 프레임 정보만 사용)
             face_data.append({
                 "face": current_faces_in_loop[idx].tolist(),
-                "expression_score": int(score * 100), # 점수 스케일 0-100
+                "expression_score": int(score * 100),
                 "is_candidate": idx == current_loop_candidate_idx
             })
 
@@ -380,20 +380,21 @@ async def apply_handpick_effect(frame, initial_faces, websocket, original_frame=
 
         await asyncio.sleep(0.1)
 
-    # --- 루프 종료 후 최종 선정 로직 ---
+    # --- 루프 종료 후 ---
+    # --- 추가: 클라이언트에 감지 종료 알림 ---
+    await websocket.send_json({'type': 'handpick_detection_end'})
+    # --- 추가 끝 ---
+
     print("Handpick 루프 종료, 최종 점수 계산 시작")
-    final_frame = None
-    if animation_service and client_id and client_id in animation_service.last_frames:
-        final_frame = animation_service.last_frames[client_id].copy()
-    else:
-        final_frame = current_frame if 'current_frame' in locals() else baseline_frame
+    # --- 수정: 최종 프레임을 last_detected_faces와 쌍을 이루는 프레임으로 변경 ---
+    final_frame = frame_for_last_yolo
+    # --- 수정 끝 ---
 
-    # final_frame 유효성 체크
-    if final_frame is None:
-         await websocket.send_json({'type': 'error', 'message': '❌ 최종 결과 프레임을 가져올 수 없습니다.'})
-         return frame, None
+    # final_frame 유효성 체크 (frame_for_last_yolo는 초기값이 있으므로 None 체크 불필요)
 
+    # --- 수정: 최종 랭킹용 얼굴 목록도 루프 마지막 감지 결과 사용 ---
     final_faces_for_ranking = last_detected_faces
+    # --- 수정 끝 ---
     print(f"최종 프레임 얼굴 감지 결과: {len(final_faces_for_ranking)} 명")
 
     final_scores_calculated = {}
@@ -402,16 +403,14 @@ async def apply_handpick_effect(frame, initial_faces, websocket, original_frame=
          await websocket.send_json({'type': 'error', 'message': '❌ 최종 선정 시점에 감지된 얼굴이 없습니다.'})
          return frame, None
     else:
-        # 마지막 프레임 기준으로 점수 계산 (스무딩 없음)
+        # 마지막 프레임 기준으로 점수 계산 (이제 final_frame과 final_faces_for_ranking이 일치함)
         for idx, (x, y, w, h) in enumerate(final_faces_for_ranking):
-            # get_face_landmarks 비동기 호출로 변경
-            final_landmarks = await get_face_landmarks(final_frame, int(x), int(y), int(w), int(h)) # await 추가
+            final_landmarks = await get_face_landmarks(final_frame, int(x), int(y), int(w), int(h))
             final_score = 0.0
             if final_landmarks is not None:
                 final_score = expression_detector.get_expression_score(idx, final_landmarks, detection_mode)
 
             final_scores_calculated[idx] = final_score
-
 
     # 최종 점수 기반 순위 선정
     all_scores = [{"idx": idx, "score": score} for idx, score in final_scores_calculated.items()]
@@ -420,21 +419,17 @@ async def apply_handpick_effect(frame, initial_faces, websocket, original_frame=
     selected_face_coords = None
     best_score = 0.0
     best_idx = -1
-
-    # 선정 기준 점수 (튜닝 필요)
-    MIN_VALID_SCORE = 0.2 # 우선 공통 기준 사용
+    MIN_VALID_SCORE = 0.2
 
     if all_scores and all_scores[0]["score"] >= MIN_VALID_SCORE:
         best_idx = all_scores[0]["idx"]
         best_score = all_scores[0]["score"]
-        # 인덱스 유효성 검사 강화
         if best_idx < len(final_faces_for_ranking):
              selected_face_coords = final_faces_for_ranking[best_idx]
              print(f"최종 선정: 얼굴 #{best_idx}, 점수: {best_score:.2f}")
         else:
              best_idx = -1
              print(f"⚠️ 인덱스 오류 발생: best_idx={best_idx}, final_faces_for_ranking 길이={len(final_faces_for_ranking)}")
-
 
     # 기준 미달 또는 유효 선정자 없으면 랜덤 선택
     if selected_face_coords is None:
@@ -474,7 +469,6 @@ async def apply_handpick_effect(frame, initial_faces, websocket, original_frame=
         expression_name = "랜덤 선정"
         message = "행운의 주인공!"
 
-
     # 상위 3명 순위 정보 구성 (수정: 5명 -> 3명)
     ranking_data = []
     for rank, entry in enumerate(all_scores[:3]):
@@ -489,7 +483,7 @@ async def apply_handpick_effect(frame, initial_faces, websocket, original_frame=
     # 최종 프레임 Base64 인코딩
     result_frame_base64 = None
     try:
-        _, buffer = cv2.imencode('.jpg', final_frame)
+        _, buffer = cv2.imencode('.jpg', final_frame) # 이제 final_frame은 마지막 YOLO 프레임
         result_frame_base64 = base64.b64encode(buffer).decode('utf-8')
     except Exception as e:
         print(f"Error encoding final frame: {e}")

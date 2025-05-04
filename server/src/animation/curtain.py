@@ -94,7 +94,7 @@ async def apply_curtain_effect(frame, faces, websocket, original_frame=None, is_
         
         # 최신 얼굴이 감지되었으면 그것을 사용, 아니면 초기 얼굴 사용
         if len(current_faces) > 0:
-            print("최신 있음")
+            # print("최신 있음")
             selection_faces = current_faces
         else:
             print("최신 없음")

@@ -94,14 +94,11 @@ class AnimationService:
                     # 최신 프레임 저장 (웹소켓 객체 ID를 키로 사용)
                     self.last_frames[client_id] = frame
                     
-                    if self.active_animations[client_id] == False:
-                    # 얼굴 감지 (비동기 호출로 변경)
-                        faces = await detect_faces_yolo(frame)
-                        await self._send_faces(websocket, faces)
-                    # 애니메이션 시작 - startAnimation이 true인 경우에만 얼굴 감지 확인
+                    # 애니메이션 시작 요청인지 확인 (startAnimation 플래그)
                     if data.get('startAnimation'):
-                        self.last_frames[client_id] = frame
+                        # startAnimation=True일 때만 얼굴 감지 수행
                         faces = await detect_faces_yolo(frame)
+
                         # 얼굴이 감지되지 않은 경우 오류 메시지 전송
                         if len(faces) == 0:
                             # print("[AnimationService] 얼굴이 감지되지 않음 - 오류 메시지 전송")
@@ -109,6 +106,9 @@ class AnimationService:
                                 'type': 'error',
                                 'message': '❌ 감지된 얼굴이 없습니다.'
                             })
+                            # 중요: 애니메이션 실행 플래그 해제
+                            self.running_animations[client_id] = False
+                            self.active_animations[client_id] = False # 활성 상태도 해제
                             return  # 이후 애니메이션 실행하지 않고 종료
                         
                         mode = data['mode']
@@ -141,9 +141,14 @@ class AnimationService:
                                             'type': 'animation_complete',
                                             'mode': mode
                                         })
-                                        self.active_animations[client_id] = False
+                                        # 완료 시 active_animations 해제는 여기서 하는 것이 더 안전할 수 있음
+                                        # 하지만 is_running() 체크로 이미 제어됨
                                 except Exception as e:
                                     print(f"[AnimationService] 애니메이션 완료 처리 중 오류: {str(e)}")
+                                finally:
+                                     # 애니메이션 태스크 완료 시 active_animations 상태 업데이트
+                                     if client_id in self.active_animations:
+                                          self.active_animations[client_id] = False
                             
                             # 완료 처리 태스크 시작
                             asyncio.create_task(handle_animation_completion())
@@ -169,7 +174,10 @@ class AnimationService:
                 })
                 # 애니메이션 실행 플래그 해제
                 self.running_animations[client_id] = False
-                raise
+                # 에러 발생 시 active_animations 상태도 확실히 해제
+                if client_id in self.active_animations:
+                    self.active_animations[client_id] = False
+                # raise # 디버깅 시 주석 해제
 
     def _decode_frame(self, frame_data: str) -> np.ndarray:
         try:
