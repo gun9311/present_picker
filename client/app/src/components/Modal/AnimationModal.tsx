@@ -475,22 +475,14 @@ const ModalContentComponent = React.memo<{
   onClose: () => void;
   connectionStatus: "connecting" | "connected" | "disconnected";
 }>(({ modeName, websocket, onClose, connectionStatus }) => {
-  const [lastCapturedFrame, setLastCapturedFrame] = useState<string | null>(
-    null
-  );
-  // --- 1. isProcessingInitialRequest 상태 추가 ---
   const [isProcessingInitialRequest, setIsProcessingInitialRequest] =
     useState(false);
+  const [clientFaceStable, setClientFaceStable] = useState<boolean>(false);
 
-  // --- 2. useAnimation 훅에 콜백 전달 ---
-  const {
-    detectedFaces,
-    resetCountdown,
-    isFaceDetectionStable,
-    ...animationState
-  } = useAnimation(websocket || null, () =>
-    setIsProcessingInitialRequest(false)
-  ); // 콜백 전달
+  const { detectedFaces, resetCountdown, ...animationState } = useAnimation(
+    websocket || null,
+    () => setIsProcessingInitialRequest(false)
+  );
 
   const cameraRef = useRef<CameraHandle>(null);
   const cameraContainerRef = useRef<HTMLDivElement>(null);
@@ -500,7 +492,7 @@ const ModalContentComponent = React.memo<{
     status,
     isSoundEnabled,
     setIsSoundEnabled,
-    setStatus, // 여전히 다른 상태 메시지용으로 사용 가능
+    setStatus,
     setIsSelecting,
     preloadedAudioCache,
   } = useAnimationContext();
@@ -509,35 +501,28 @@ const ModalContentComponent = React.memo<{
   const { rouletteActive } = animationState.getRouletteState();
   const { raceActive } = animationState.getRaceState();
 
-  // --- 전체 화면 상태 추가 ---
   const [isFullscreen, setIsFullscreen] = useState(
-    !!document.fullscreenElement // 초기 상태는 현재 fullscreen 상태 반영
+    !!document.fullscreenElement
   );
-  // --- 여기까지 추가 ---
 
-  // 얼굴 정보가 업데이트되면 Camera 컴포넌트에 전달
   useEffect(() => {
-    if (cameraRef.current && detectedFaces.length > 0) {
-      //   console.log("Updating face frames in Camera component:", detectedFaces);
+    if (isSelecting && cameraRef.current && detectedFaces.length >= 0) {
       cameraRef.current.updateFaceFrames(detectedFaces);
     }
-  }, [detectedFaces]);
+  }, [detectedFaces, isSelecting]);
 
-  // 활성 모드가 변경될 때 해당 모드의 리소스 프리로드 (cacheRef 전달)
   useEffect(() => {
     const modeId = getModeId(modeName);
     if (modeId) {
       if (connectionStatus === "connected") {
         setStatus("🔄 리소스 로딩 중...");
         preloadModeResources(modeId, preloadedAudioCache).then(() => {
-          // preloadedAudioCache 전달
           setStatus("");
         });
       }
     }
-  }, [modeName, connectionStatus, setStatus, preloadedAudioCache]); // preloadedAudioCache 의존성 추가
+  }, [modeName, connectionStatus, setStatus, preloadedAudioCache]);
 
-  // --- 전체 화면 변경 감지 및 상태 동기화 useEffect ---
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
@@ -545,24 +530,18 @@ const ModalContentComponent = React.memo<{
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
 
-    // 클린업 함수: 컴포넌트 언마운트 시 이벤트 리스너 제거
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
-  }, []); // 마운트 시 한 번만 실행
-  // --- 여기까지 추가 ---
+  }, []);
 
   const handleFrame = useCallback(
     (frame: string) => {
       if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-        console.log("WebSocket not ready");
+        console.log("WebSocket not ready for handleFrame");
         return;
       }
 
-      const frameData = `data:image/jpeg;base64,${frame}`;
-      setLastCapturedFrame(frameData);
-
-      // 일반 프레임 전송 (얼굴 인식용)
       websocket.send(
         JSON.stringify({
           type: "start_animation",
@@ -582,17 +561,20 @@ const ModalContentComponent = React.memo<{
       return;
     }
 
-    if (!lastCapturedFrame) {
-      console.log("카메라 프레임이 준비되지 않았습니다.");
-      setStatus("⌛ 카메라 준비 중... 잠시 후 다시 시도해주세요.");
+    const currentFrameBase64 = cameraRef.current?.captureCurrentFrame();
+
+    if (!currentFrameBase64) {
+      console.error("카메라에서 현재 프레임을 가져오지 못했습니다.");
+      setStatus("⚠️ 카메라 프레임 캡처 실패. 잠시 후 다시 시도해주세요.");
       setTimeout(() => setStatus(""), 2000);
       return;
     }
 
-    const base64Data = lastCapturedFrame.split(",")[1];
-
-    if (!base64Data || base64Data.length < 1000) {
-      console.error("유효하지 않은 프레임 데이터");
+    if (currentFrameBase64.length < 1000) {
+      console.error(
+        "캡처된 프레임 데이터가 유효하지 않음:",
+        currentFrameBase64.length
+      );
       if (status !== "⚠️ 카메라 데이터 오류. 잠시 후 다시 시도해주세요.") {
         setStatus("⚠️ 카메라 데이터 오류. 잠시 후 다시 시도해주세요.");
         setTimeout(() => setStatus(""), 2000);
@@ -600,10 +582,7 @@ const ModalContentComponent = React.memo<{
       return;
     }
 
-    // --- 3. 즉시 isProcessingInitialRequest 상태 true로 설정 ---
     setIsProcessingInitialRequest(true);
-
-    // --- isSelecting 상태 변경 (이 위치는 유지) ---
     console.log("[AnimationModal] Setting isSelecting to true immediately.");
     setIsSelecting(true);
 
@@ -611,29 +590,26 @@ const ModalContentComponent = React.memo<{
       `[AnimationModal] 애니메이션 시작 요청 - 모드: ${getModeId(modeName)}`
     );
 
-    // 애니메이션 시작 명령 전송
     websocket.send(
       JSON.stringify({
         type: "start_animation",
         mode: getModeId(modeName),
-        frame: base64Data,
+        frame: currentFrameBase64,
         startAnimation: true,
       })
     );
   }, [
     websocket,
-    lastCapturedFrame,
     modeName,
     status,
     setStatus,
     isSelecting,
     setIsSelecting,
+    cameraRef,
   ]);
 
-  // --- 전체 화면 토글 함수 ---
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      // documentElement는 전체 HTML 문서를 나타냄
       document.documentElement
         .requestFullscreen()
         .catch((err) =>
@@ -647,7 +623,6 @@ const ModalContentComponent = React.memo<{
       }
     }
   }, []);
-  // --- 여기까지 추가 ---
 
   const animationComponent = useMemo(() => {
     const mode = getModeId(modeName);
@@ -657,14 +632,12 @@ const ModalContentComponent = React.memo<{
 
     const animationProps = {
       faces: detectedFaces,
-      lastCapturedFrame,
       websocket: websocket || null,
       cameraContainerRef: cameraContainerRef as React.RefObject<HTMLDivElement>,
     };
 
     console.log(`[AnimationModal] 애니메이션 props: `, {
       facesCount: detectedFaces.length,
-      hasLastFrame: !!lastCapturedFrame,
       hasWebsocket: !!websocket,
       hasCamera: !!cameraContainerRef.current,
       resetCountdown: resetCountdown,
@@ -690,17 +663,17 @@ const ModalContentComponent = React.memo<{
     modeName,
     isSelecting,
     detectedFaces,
-    lastCapturedFrame,
     websocket,
     cameraContainerRef,
     resetCountdown,
   ]);
 
-  // --- 플랫폼 확인 변수 추가 ---
   const isWebPlatform = import.meta.env.VITE_TARGET_PLATFORM === "web";
-  // --- 여기까지 추가 ---
 
-  // 연결 중일 때는 로딩 화면 표시
+  const handleClientStabilityChange = useCallback((isStable: boolean) => {
+    setClientFaceStable(isStable);
+  }, []);
+
   if (connectionStatus === "connecting") {
     return (
       <>
@@ -713,7 +686,6 @@ const ModalContentComponent = React.memo<{
     );
   }
 
-  // 연결 실패 시 오류 메시지 표시
   if (connectionStatus === "disconnected") {
     return (
       <>
@@ -732,18 +704,14 @@ const ModalContentComponent = React.memo<{
     );
   }
 
-  // --- 4. 처리 중 오버레이 조건부 렌더링 ---
   return (
     <>
-      {/* --- 뒤로가기 버튼 추가 (isSelecting일 때만 표시) --- */}
       {isSelecting && (
         <BackButton onClick={onClose} title="모드 선택으로 돌아가기">
           ←
         </BackButton>
       )}
-      {/* --- 추가 끝 --- */}
 
-      {/* --- Title 컴포넌트 렌더링 조건 수정 --- */}
       {(!isSelecting || status.includes("선정 완료")) && (
         <Title>
           {status}
@@ -755,17 +723,13 @@ const ModalContentComponent = React.memo<{
           {!status && modeName}
         </Title>
       )}
-      {/* --- 수정 끝 --- */}
 
-      {/* --- 오른쪽 상단 컨트롤 버튼들 --- */}
       <TopRightControls>
-        {/* 웹 플랫폼일 때만 전체 화면 버튼 표시 */}
         {isWebPlatform && (
           <ControlButton
             onClick={toggleFullscreen}
             title={isFullscreen ? "전체 화면 종료" : "전체 화면 시작"}
           >
-            {/* 아이콘: 전체 화면이면 축소 아이콘, 아니면 확대 아이콘 */}
             {isFullscreen ? "↘️" : "↗️"}
           </ControlButton>
         )}
@@ -776,9 +740,7 @@ const ModalContentComponent = React.memo<{
           {isSoundEnabled ? "🔊" : "🔇"}
         </ControlButton>
       </TopRightControls>
-      {/* --- 여기까지 추가 --- */}
 
-      {/* 처리 중 오버레이 */}
       {isProcessingInitialRequest && (
         <ProcessingIndicatorOverlay>
           <ProcessingSpinner />
@@ -793,7 +755,8 @@ const ModalContentComponent = React.memo<{
             onFrame={handleFrame}
             isConnected={websocket?.readyState === WebSocket.OPEN}
             ref={cameraRef}
-            faces={detectedFaces}
+            faces={isSelecting ? detectedFaces : []}
+            onStabilityChange={handleClientStabilityChange}
           />
         </CameraContainer>
       )}
@@ -801,29 +764,27 @@ const ModalContentComponent = React.memo<{
       {animationComponent}
 
       <ControlsContainer>
-        {/* --- 기존 버튼들 모두 isSelecting이 아닐 때만 표시 --- */}
         {!isSelecting && (
           <>
             <StyledButton
               variant="primary"
               onClick={startAnimationDirectly}
-              disabled={!isFaceDetectionStable || isSelecting}
+              disabled={!clientFaceStable || isSelecting}
               title={
-                !isFaceDetectionStable
+                !clientFaceStable
                   ? "안정적인 얼굴 인식이 필요합니다."
                   : isSelecting
                   ? "애니메이션 시작 중..."
-                  : ""
+                  : "뽑기 시작"
               }
             >
-              🔮 뽑기 {isFaceDetectionStable ? "" : "(카메라 준비 중)"}
+              🔮 뽑기 {clientFaceStable ? "" : "(얼굴 감지 중...)"}
             </StyledButton>
             <StyledButton variant="return" onClick={onClose}>
               🏠 모드 선택
             </StyledButton>
           </>
         )}
-        {/* --- 수정 끝 --- */}
       </ControlsContainer>
     </>
   );

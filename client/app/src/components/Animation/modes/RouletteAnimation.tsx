@@ -139,10 +139,7 @@ const WinnerIcon = styled.span`
   line-height: 1;
 `;
 
-const RouletteAnimation: React.FC<AnimationProps> = ({
-  lastCapturedFrame,
-  websocket,
-}) => {
+const RouletteAnimation: React.FC<AnimationProps> = ({ websocket }) => {
   const { playSound, stopSound } = useAnimationContext();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -170,8 +167,8 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
   const { rouletteActive, rouletteFaces, frozenFrame, rouletteParams } =
     getRouletteState();
 
-  // 화면에 표시할 프레임
-  const frameToUse = frozenFrame || lastCapturedFrame;
+  // 화면에 표시할 프레임 (frozenFrame 사용)
+  const frameToUse = frozenFrame;
 
   // faceImagesRef를 추가하여 최신 상태 추적
   const faceImagesRef = useRef<string[]>([]);
@@ -298,25 +295,32 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
   // 얼굴 위치 계산 함수를 먼저 선언 - 여기로 위치 이동
   const getFacePosition = useCallback(
     (index: number, totalFaces: number) => {
+      // 컨테이너 크기가 유효하지 않으면 (0이면) 계산을 중단하고 기본값(중앙) 반환
+      if (!containerSize.width || !containerSize.height) {
+        console.warn(
+          "getFacePosition: Container size is not valid yet, returning default position.",
+          containerSize
+        );
+        return { x: 50, y: 50 }; // 기본값 반환 (화면 중앙)
+      }
+
       const angleStep = 360 / totalFaces;
       const angle = index * angleStep;
       const radians = angle * (Math.PI / 180);
 
-      // 기본 반지름 설정
       const baseRadius = 18;
-
-      // 컨테이너 비율에 맞게 x, y 반지름 조정
+      // 이제 height가 0이 아님이 보장됨
       const aspectRatio = containerSize.width / containerSize.height;
       const radiusX = baseRadius;
-      const radiusY = baseRadius * aspectRatio; // 높이 대비 너비 비율에 따라 y축 반지름 조정
+      const radiusY = baseRadius * aspectRatio;
 
-      // 백분율로 위치 계산 (50%가 중심)
       const x = 50 + Math.cos(radians) * radiusX;
       const y = 50 + Math.sin(radians) * radiusY;
 
+      // 계산된 값 반환 (이제 NaN이 아님)
       return { x, y };
     },
-    [containerSize]
+    [containerSize] // 의존성 배열은 그대로 유지
   );
 
   // 얼굴 이미지 추출 효과 (기존과 동일)
@@ -329,7 +333,7 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
       );
 
       setFaceImages(images);
-      faceImagesRef.current = images; // ref 업데이트
+      faceImagesRef.current = images;
     };
 
     if (rouletteActive && frameToUse) {
@@ -522,7 +526,7 @@ const RouletteAnimation: React.FC<AnimationProps> = ({
     startClientSideAnimation,
   ]);
 
-  if (!rouletteActive || !frameToUse) return null;
+  if (!rouletteActive) return null;
 
   return (
     <RouletteContainer>

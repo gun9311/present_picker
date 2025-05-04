@@ -53,11 +53,21 @@ const WinnerOverlay = styled.div`
   z-index: 10;
 `;
 
+// --- 타입 정의 추가 ---
+interface Effect {
+  id: number;
+  duration: number;
+}
+interface CollisionEffect extends Effect {
+  isShieldBreak?: boolean;
+}
+interface PowerupEffect extends Effect {
+  type: number;
+}
+// --- 타입 정의 끝 ---
+
 // 레이스 애니메이션 컴포넌트
-const RaceAnimation: React.FC<AnimationProps> = ({
-  lastCapturedFrame,
-  websocket,
-}) => {
+const RaceAnimation: React.FC<AnimationProps> = ({ websocket }) => {
   const { getRaceState } = useAnimation(websocket);
 
   const {
@@ -75,23 +85,15 @@ const RaceAnimation: React.FC<AnimationProps> = ({
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
-
-  // 이미지 로딩 상태 관리
-  const [imagesLoaded, setImagesLoaded] = useState(false);
+  const imagesLoaded = useRef(false);
   const imagesRef = useRef<Record<string, HTMLImageElement>>({});
 
-  // 시각적 효과를 위한 상태들
-  const [collisionEffects, setCollisionEffects] = useState<
-    { id: number; duration: number; isShieldBreak?: boolean }[]
-  >([]);
-  const [powerupEffects, setPowerupEffects] = useState<
-    { id: number; duration: number; type: number }[]
-  >([]);
+  // --- useState 대신 useRef 사용 ---
+  const collisionEffectsRef = useRef<CollisionEffect[]>([]);
+  const powerupEffectsRef = useRef<PowerupEffect[]>([]);
+  // --- 변경 끝 ---
 
-  // 카운트다운 표시 상태
   const [showCountdown, setShowCountdown] = useState<boolean>(true);
-
-  // 줌 관련 상태 추가
   const [currentZoomLevel, setCurrentZoomLevel] = useState<number>(1.0);
   const prevLeadRacerRef = useRef<number | null>(null);
   const lastRenderTimeRef = useRef<number>(Date.now());
@@ -101,14 +103,10 @@ const RaceAnimation: React.FC<AnimationProps> = ({
     startTime: number;
     fromLevel: number;
   }>({ active: false, phase: 0, startTime: 0, fromLevel: 1.0 });
-
-  // +++ 추가: 제거 애니메이션 상태 +++
-  const [eliminationAnimations, setEliminationAnimations] = useState<
+  const eliminationAnimations = useRef<
     Map<number, { startTime: number; duration: number; x: number; y: number }>
   >(new Map());
-  // +++ 추가 끝 +++
 
-  // 이미지 로드 함수
   const loadImages = useCallback(() => {
     // --- 랜덤 트랙 이미지 선택 ---
     const randomTrackIndex = Math.floor(Math.random() * 3) + 1; // 1, 2, 3 중 랜덤 숫자 생성
@@ -134,7 +132,7 @@ const RaceAnimation: React.FC<AnimationProps> = ({
       img.onload = () => {
         loadedCount++;
         if (loadedCount === totalImages) {
-          setImagesLoaded(true);
+          imagesLoaded.current = true;
         }
       };
       imagesRef.current[key] = img;
@@ -232,7 +230,12 @@ const RaceAnimation: React.FC<AnimationProps> = ({
 
   // 카메라 위치에 따른 트랙 렌더링 구현
   const drawRace = useCallback(() => {
-    if (!canvasRef.current || !imagesLoaded || !raceActive || !raceTrackConfig)
+    if (
+      !canvasRef.current ||
+      !imagesLoaded.current ||
+      !raceActive ||
+      !raceTrackConfig
+    )
       return;
 
     const canvas = canvasRef.current;
@@ -453,22 +456,8 @@ const RaceAnimation: React.FC<AnimationProps> = ({
       }
     });
 
-    // +++ 추가: 완료된 제거 애니메이션 정리 +++
-    const currentAnimations = eliminationAnimations; // 현재 상태 복사
-    let animationsChanged = false;
-    currentAnimations.forEach((anim, racerId) => {
-      if (now >= anim.startTime + anim.duration) {
-        currentAnimations.delete(racerId);
-        animationsChanged = true;
-      }
-    });
-    if (animationsChanged) {
-      setEliminationAnimations(new Map(currentAnimations));
-    }
-    // +++ 추가 끝 +++
-
     // 레이서 그리기
-    const frameToUse = frozenFrame || lastCapturedFrame;
+    const frameToUse = frozenFrame;
 
     if (frameToUse && racerPositions.length > 0 && raceFaces.length > 0) {
       // 얼굴 이미지 생성
@@ -489,7 +478,9 @@ const RaceAnimation: React.FC<AnimationProps> = ({
       // 정렬된 순서로 레이서 그리기
       sortedRacers.forEach((racer) => {
         // --- 변경: 제거 애니메이션 중에는 racer.eliminated가 true여도 그림 ---
-        const activeEliminationAnim = eliminationAnimations.get(racer.id);
+        const activeEliminationAnim = eliminationAnimations.current.get(
+          racer.id
+        );
         if (racer.eliminated && !activeEliminationAnim) {
           // 제거됐고 애니메이션 없으면 그리지 않음
           return;
@@ -569,7 +560,7 @@ const RaceAnimation: React.FC<AnimationProps> = ({
         ctx.save();
 
         // --- 충돌 시 화면 흔들림 효과 ---
-        const currentCollisionEffect = collisionEffects.find(
+        const currentCollisionEffect = collisionEffectsRef.current.find(
           (effect) => effect.id === racer.id && effect.duration > 0
         );
         if (currentCollisionEffect) {
@@ -627,7 +618,7 @@ const RaceAnimation: React.FC<AnimationProps> = ({
           const bodyOffsetY = ufoHeight * 0.15; // 하단부 위치 조정
 
           // --- 엔진 분사 효과 (부스트 시 강화 추가) ---
-          const currentPowerupEffect = powerupEffects.find(
+          const currentPowerupEffect = powerupEffectsRef.current.find(
             (effect) =>
               effect.id === racer.id && effect.type === 1 && effect.duration > 0
           );
@@ -1168,24 +1159,32 @@ const RaceAnimation: React.FC<AnimationProps> = ({
       ctx.restore();
     }
 
-    // --- 상태 업데이트: 효과 지속 시간 감소 및 만료된 효과 제거 ---
-    setCollisionEffects(
-      (prevEffects) =>
-        prevEffects
-          .map((eff) => ({ ...eff, duration: eff.duration - 1 })) // 모든 효과의 duration 감소
-          .filter((eff) => eff.duration > 0) // duration이 0보다 큰 효과만 남김
-    );
-    setPowerupEffects(
-      (prevEffects) =>
-        prevEffects
-          .map((eff) => ({ ...eff, duration: eff.duration - 1 })) // 모든 효과의 duration 감소
-          .filter((eff) => eff.duration > 0) // duration이 0보다 큰 효과만 남김
-    );
+    // --- 상태 업데이트: ref 직접 수정 ---
+    collisionEffectsRef.current = collisionEffectsRef.current
+      .map((eff) => ({ ...eff, duration: eff.duration - 1 }))
+      .filter((eff) => eff.duration > 0);
+
+    powerupEffectsRef.current = powerupEffectsRef.current
+      .map((eff) => ({ ...eff, duration: eff.duration - 1 }))
+      .filter((eff) => eff.duration > 0);
+
+    // 제거 애니메이션 정리 (ref 직접 수정)
+    const currentElimAnimations = eliminationAnimations.current;
+    let elimAnimationsChanged = false;
+    currentElimAnimations.forEach((anim, racerId) => {
+      if (now >= anim.startTime + anim.duration) {
+        currentElimAnimations.delete(racerId);
+        elimAnimationsChanged = true;
+      }
+    });
+    // (Map 객체는 직접 수정되므로 setEliminationAnimations 불필요)
+
+    // --- 수정 끝 ---
 
     // 애니메이션 프레임 요청
     animationRef.current = requestAnimationFrame(drawRace);
   }, [
-    imagesLoaded,
+    imagesLoaded.current,
     raceActive,
     raceTrackConfig,
     raceObstacles,
@@ -1193,38 +1192,39 @@ const RaceAnimation: React.FC<AnimationProps> = ({
     racerPositions,
     raceWinner,
     frozenFrame,
-    lastCapturedFrame,
     raceFaces,
-    collisionEffects,
-    powerupEffects,
     raceCamera,
     currentZoomLevel,
     eliminationAnimations,
   ]);
 
-  // 이펙트 처리 함수들
+  // 이펙트 처리 함수들 (ref 수정하도록 변경)
   const addCollisionEffect = useCallback(
     (racerId: number, isShieldBreak: boolean = false) => {
-      setCollisionEffects((prev) =>
-        prev.filter((effect) => effect.id !== racerId)
+      collisionEffectsRef.current = collisionEffectsRef.current.filter(
+        (effect) => effect.id !== racerId
       );
-      setCollisionEffects((prev) => [
-        ...prev,
-        { id: racerId, duration: isShieldBreak ? 40 : 35, isShieldBreak },
-      ]);
+      collisionEffectsRef.current.push({
+        id: racerId,
+        duration: isShieldBreak ? 40 : 35,
+        isShieldBreak,
+      });
     },
     []
   );
 
   const addPowerupEffect = useCallback((racerId: number, type: number) => {
-    setPowerupEffects((prev) => prev.filter((effect) => effect.id !== racerId));
-    setPowerupEffects((prev) => [
-      ...prev,
-      { id: racerId, duration: type === 1 ? 60 : 0, type },
-    ]);
+    powerupEffectsRef.current = powerupEffectsRef.current.filter(
+      (effect) => effect.id !== racerId
+    );
+    powerupEffectsRef.current.push({
+      id: racerId,
+      duration: type === 1 ? 60 : 0,
+      type,
+    });
   }, []);
 
-  // +++ 추가: 제거 애니메이션 시작 함수 +++
+  // 제거 애니메이션 시작 함수 (ref 수정)
   const startEliminationAnimation = useCallback(
     (racerId: number) => {
       if (!canvasRef.current || !raceTrackConfig || !racerPositions) return;
@@ -1244,23 +1244,18 @@ const RaceAnimation: React.FC<AnimationProps> = ({
 
       const duration = 500; // 0.5초 애니메이션
 
-      setEliminationAnimations((prev) => {
-        const next = new Map(prev);
-        // 이미 애니메이션 중이면 시작하지 않음
-        if (!next.has(racerId)) {
-          next.set(racerId, {
-            startTime: Date.now(),
-            duration: duration,
-            x: racerDrawX, // 시작 X 위치 (참고용, 현재는 사용 안 함)
-            y: racerDrawY, // 시작 Y 위치 (참고용, 현재는 사용 안 함)
-          });
-        }
-        return next;
-      });
+      const currentElimAnimations = eliminationAnimations.current;
+      if (!currentElimAnimations.has(racerId)) {
+        currentElimAnimations.set(racerId, {
+          startTime: Date.now(),
+          duration: duration,
+          x: racerDrawX,
+          y: racerDrawY,
+        });
+      }
     },
-    [racerPositions, raceTrackConfig, raceCamera] // 필요한 의존성 추가
+    [racerPositions, raceTrackConfig, raceCamera] // 의존성 유지
   );
-  // +++ 추가 끝 +++
 
   // 웹소켓 메시지 효과 처리
   useEffect(() => {
@@ -1273,9 +1268,7 @@ const RaceAnimation: React.FC<AnimationProps> = ({
         if (message.type === "race_collision" && raceActive) {
           const collisionMessage = message as RaceCollisionMessage;
           if (collisionMessage.is_elimination) {
-            // --- 변경: 제거 애니메이션 시작 함수 호출 ---
             startEliminationAnimation(collisionMessage.racer_id);
-            // --- 변경 끝 ---
           } else {
             addCollisionEffect(
               collisionMessage.racer_id,
@@ -1323,7 +1316,7 @@ const RaceAnimation: React.FC<AnimationProps> = ({
 
   // 이미지 로드 후 렌더링 시작
   useEffect(() => {
-    if (imagesLoaded && raceActive) {
+    if (imagesLoaded.current && raceActive) {
       drawRace();
     }
 
@@ -1333,7 +1326,7 @@ const RaceAnimation: React.FC<AnimationProps> = ({
         animationRef.current = null;
       }
     };
-  }, [imagesLoaded, raceActive, drawRace]);
+  }, [imagesLoaded.current, raceActive, drawRace]);
 
   // 컴포넌트 마운트 시 줌 초기화
   useEffect(() => {

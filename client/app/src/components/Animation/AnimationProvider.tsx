@@ -72,7 +72,6 @@ export const AnimationProvider: React.FC<AnimationProviderProps> = ({
           preloadedCache.get(soundPathKey);
 
         if (audio) {
-          audio.pause();
           audio.currentTime = 0;
           audio.volume = 0.2;
           audio.loop = options?.loop ?? false;
@@ -91,7 +90,11 @@ export const AnimationProvider: React.FC<AnimationProviderProps> = ({
         const playPromise = audio.play();
         if (playPromise !== undefined) {
           playPromise.catch((error) => {
-            console.error("Sound play error:", error, "Path:", soundPathKey);
+            if (error.name === "AbortError") {
+              // console.log(`Sound play aborted (likely intentional interruption): ${soundPathKey}`);
+            } else {
+              console.error("Sound play error:", error, "Path:", soundPathKey);
+            }
           });
         }
       } catch (error) {

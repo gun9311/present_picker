@@ -3,6 +3,7 @@ import styled from "@emotion/styled";
 import { AnimationProps, FaceCoordinates } from "../types";
 import { useAnimation } from "../useAnimation";
 
+
 const Container = styled.div`
   position: absolute;
   top: 0;
@@ -411,7 +412,6 @@ const cropFaceImage = (
 const HandpickAnimation: React.FC<ExtendedAnimationProps> = ({
   websocket,
   cameraContainerRef,
-  lastCapturedFrame,
 }) => {
   const { getHandpickState } = useAnimation(websocket);
   const [videoDimensions, setVideoDimensions] = useState({

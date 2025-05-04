@@ -108,7 +108,6 @@ const Coin = styled.div<{
 
 const SlotMachineAnimation: React.FC<AnimationProps> = ({
   faces,
-  lastCapturedFrame,
   websocket,
 }) => {
   const { getSlotMachineState } = useAnimation(websocket);
@@ -195,7 +194,8 @@ const SlotMachineAnimation: React.FC<AnimationProps> = ({
     }
   }, [currentSlotFaces, selectedFace, updateSlotPositions, bgImageLoaded]);
 
-  const frameToUse = frozenFrame || lastCapturedFrame;
+  // 화면에 표시할 프레임 (frozenFrame 사용)
+  const frameToUse = frozenFrame;
 
   // --- 잭팟 효과를 위한 동전 데이터 생성 (메모이제이션 사용 추천) ---
   const coins = React.useMemo(() => {
@@ -217,7 +217,7 @@ const SlotMachineAnimation: React.FC<AnimationProps> = ({
 
   // 슬롯머신 비활성 + 잭팟 비활성 + 프레임 없을 때만 렌더링 안 함
   if (!slotMachineActive && !jackpotActive) return null;
-  if (!frameToUse && !jackpotActive) return null; // 프레임 없어도 잭팟은 나올 수 있게
+  if (!frameToUse && !jackpotActive && slotMachineActive) return null;
 
   return (
     <SlotMachineContainer ref={containerRef}>
@@ -250,8 +250,6 @@ const SlotMachineAnimation: React.FC<AnimationProps> = ({
           if (!faceCoords) return null;
 
           const [x, y, w, h] = faceCoords;
-
-          if (!frameToUse) return null;
 
           return (
             <SlotFace

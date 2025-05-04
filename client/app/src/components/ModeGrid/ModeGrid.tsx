@@ -18,8 +18,8 @@ const ModeGrid: React.FC = () => {
   const [connectToWebSocket, setConnectToWebSocket] = useState(false);
 
   // const WS_URL = import.meta.env.VITE_WS_URL;
-  // const WS_URL = "ws://109.123.229.121/ws/animation";
   const WS_URL = "wss://t-bot.site/ws/animation";
+  // const WS_URL = "ws://localhost:8000/ws/animation";
 
   if (!WS_URL) {
     throw new Error("VITE_WS_URL is not defined in .env file");

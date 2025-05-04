@@ -37,9 +37,7 @@ export interface SlotPosition {
 
 export interface AnimationProps {
   faces: Array<[number, number, number, number]>;
-  lastCapturedFrame: string | null;
   websocket: WebSocket | null;
-  // 카메라 컨테이너 참조 추가 (선택적)
   cameraContainerRef?: React.RefObject<HTMLDivElement>;
 }
 
