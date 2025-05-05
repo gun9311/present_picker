@@ -216,11 +216,25 @@ const ControlButton = styled.button`
   display: flex;
   justify-content: center;
   align-items: center;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, opacity 0.2s;
   line-height: 1; // 아이콘 수직 정렬
 
   &:hover {
     background: rgba(0, 0, 0, 0.6); // 호버 시 약간 더 진하게
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  &.flipped {
+    background-color: rgba(0, 123, 255, 0.6);
+    &:disabled {
+      background-color: rgba(0, 123, 255, 0.3);
+      opacity: 0.5;
+    }
   }
 `;
 
@@ -478,6 +492,7 @@ const ModalContentComponent = React.memo<{
   const [isProcessingInitialRequest, setIsProcessingInitialRequest] =
     useState(false);
   const [clientFaceStable, setClientFaceStable] = useState<boolean>(false);
+  const [isCameraFlipped, setIsCameraFlipped] = useState<boolean>(false);
 
   const { detectedFaces, resetCountdown, ...animationState } = useAnimation(
     websocket || null,
@@ -631,6 +646,10 @@ const ModalContentComponent = React.memo<{
     }
   }, []);
 
+  const toggleCameraFlip = useCallback(() => {
+    setIsCameraFlipped((prev) => !prev);
+  }, []);
+
   const animationComponent = useMemo(() => {
     const mode = getModeId(modeName);
     console.log(
@@ -641,6 +660,7 @@ const ModalContentComponent = React.memo<{
       faces: detectedFaces,
       websocket: websocket || null,
       cameraContainerRef: cameraContainerRef as React.RefObject<HTMLDivElement>,
+      isCameraFlipped: isCameraFlipped,
     };
 
     console.log(`[AnimationModal] 애니메이션 props: `, {
@@ -674,6 +694,7 @@ const ModalContentComponent = React.memo<{
     cameraContainerRef,
     resetCountdown,
     animationState,
+    isCameraFlipped,
   ]);
 
   const isWebPlatform = import.meta.env.VITE_TARGET_PLATFORM === "web";
@@ -762,6 +783,14 @@ const ModalContentComponent = React.memo<{
       )}
 
       <TopRightControls>
+        <ControlButton
+          onClick={toggleCameraFlip}
+          title={isCameraFlipped ? "카메라 원상 복구" : "카메라 상하 반전"}
+          className={isCameraFlipped ? "flipped" : ""}
+          disabled={isSelecting}
+        >
+          🔄
+        </ControlButton>
         {isWebPlatform && (
           <ControlButton
             onClick={toggleFullscreen}
@@ -795,6 +824,7 @@ const ModalContentComponent = React.memo<{
             faces={isSelecting ? detectedFaces : []}
             onStabilityChange={handleClientStabilityChange}
             shouldSendFrameNow={shouldSendFrameNow}
+            isFlipped={isCameraFlipped}
           />
         </CameraContainer>
       )}

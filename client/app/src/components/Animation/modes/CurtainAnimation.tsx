@@ -114,11 +114,13 @@ const ResultText = styled.div`
 // 컴포넌트 props 타입 확장
 interface ExtendedAnimationProps extends AnimationProps {
   cameraContainerRef?: React.RefObject<HTMLDivElement>;
+  isCameraFlipped?: boolean;
 }
 
 const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
   websocket,
   cameraContainerRef,
+  isCameraFlipped = false,
 }) => {
   const { getCurtainState, detectedFaces } = useAnimation(websocket);
   const [blinking, setBlinking] = useState(false);
@@ -195,9 +197,11 @@ const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
         setCurrentScale(newScale);
 
         // 새 줌 트랜스폼 적용
-        const newTransform = `scale(${newScale}) translate(${
+        const flipPrefix = isCameraFlipped ? "scaleY(-1) " : "";
+        const zoomPanTransform = `scale(${newScale}) translate(${
           translateX * 100
         }%, ${translateY * 100}%)`;
+        const newTransform = `translate3d(0, 0, 0) ${flipPrefix}${zoomPanTransform}`;
         setZoomTransform(newTransform);
 
         // 비디오 요소에 트랜스폼 직접 적용
@@ -206,7 +210,7 @@ const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
             cameraContainerRef.current.querySelector("video");
           if (videoElement) {
             videoElement.style.transition = "none"; // 트랜지션을 비활성화하고 직접 애니메이션 적용
-            videoElement.style.transform = `translate3d(0, 0, 0) ${newTransform}`;
+            videoElement.style.transform = newTransform;
           }
         }
 
@@ -224,7 +228,7 @@ const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
       // 애니메이션 시작
       animationRef.current = requestAnimationFrame(animate);
     },
-    [cameraContainerRef, zoomParams, currentScale]
+    [cameraContainerRef, zoomParams, currentScale, isCameraFlipped]
   );
 
   // 프리웜업 실행 함수 추가
@@ -273,11 +277,11 @@ const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
     const videoElement = cameraContainerRef.current.querySelector("video");
     if (videoElement) {
       videoElement.style.willChange = "transform";
-      videoElement.style.transform = "translate3d(0, 0, 0)";
-      // 하드웨어 가속 트리거
+      const initialFlipTransform = isCameraFlipped ? "scaleY(-1)" : "none";
+      videoElement.style.transform = `translate3d(0, 0, 0) ${initialFlipTransform}`;
       void videoElement.offsetHeight;
     }
-  }, [cameraContainerRef]);
+  }, [cameraContainerRef, isCameraFlipped]);
 
   // 컴포넌트 마운트 시 프리웜업 실행
   useEffect(() => {
@@ -306,31 +310,43 @@ const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
       const container = cameraContainerRef.current;
       const videoElement = container.querySelector("video");
 
-      if (!videoElement) return;
+      if (!videoElement || !videoElement.videoHeight) return; // videoHeight 확인 추가
 
       const videoWidth = videoElement.videoWidth;
       const videoHeight = videoElement.videoHeight;
 
-      // 얼굴 좌표 가져오기
+      // 얼굴 좌표 가져오기 (서버에서 받은 값, isFlipped=true면 반전된 이미지 기준)
       const [x, y, w, h] = selectedFace;
 
-      // 얼굴 크기에 따른 확대율 계산 (비율 기반)
-      const faceRatio = w / videoWidth; // 얼굴이 화면 너비에서 차지하는 비율
-      const targetRatio = 0.27; // 얼굴이 화면의 1/3 정도 차지하게
-      let scale = targetRatio / Math.max(faceRatio, 0.01); // 너무 작은 비율 방지
-      scale = Math.max(1.0, Math.min(4.0, scale)); // 줌 스케일 제한
-
-      // 또는 zoomParams가 있으면 사용
+      // 얼굴 크기에 따른 확대율 계산 (기존 로직 유지)
+      const faceRatio = w / videoWidth;
+      const targetRatio = 0.27;
+      let scale = targetRatio / Math.max(faceRatio, 0.01);
+      scale = Math.max(1.0, Math.min(4.0, scale));
       scale = zoomParams?.scale || scale;
 
       // 화면 중앙에서 얼굴까지의 상대적 오프셋 계산
       const centerX = x + w / 2;
-      const centerY = y + h / 2;
+
+      // --- 수정: translateY 계산 시 isCameraFlipped 고려 ---
+      let centerY_for_translate: number;
+      if (isCameraFlipped) {
+        // isFlipped = true: 서버 y는 반전된 이미지 기준 (위쪽이 0).
+        // 원본 비디오 기준 y로 변환 후 중심 계산
+        const originalY = videoHeight - y - h;
+        centerY_for_translate = originalY + h / 2;
+      } else {
+        // isFlipped = false: 서버 y는 원본 이미지 기준 (위쪽이 0).
+        centerY_for_translate = y + h / 2;
+      }
 
       // 비디오 중앙 기준으로 변환 값 계산 (-1 ~ 1 범위로 정규화)
+      // translateX는 그대로 사용
       const translateX = ((videoWidth / 2 - centerX) / (videoWidth / 2)) * 0.5;
+      // 변환된 centerY_for_translate 사용
       const translateY =
-        ((videoHeight / 2 - centerY) / (videoHeight / 2)) * 0.5;
+        ((videoHeight / 2 - centerY_for_translate) / (videoHeight / 2)) * 0.5;
+      // --- 수정 끝 ---
 
       // 목표 스케일 설정
       setTargetScale(scale);
@@ -346,6 +362,7 @@ const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
     cameraContainerRef,
     zoomParams,
     animateScale,
+    isCameraFlipped, // isCameraFlipped 의존성 추가
   ]);
 
   // 컴포넌트 언마운트 시 애니메이션 정리
@@ -365,39 +382,34 @@ const CurtainAnimation: React.FC<ExtendedAnimationProps> = ({
     }
 
     const cameraContainer = cameraContainerRef.current;
+    const videoElement = cameraContainer.querySelector("video");
 
     if (curtainActive) {
-      // 커튼 활성화 시 카메라를 뒤로 배치
       cameraContainer.style.zIndex = "1";
     } else {
-      // 커튼이 비활성화되면 원래 상태로 복구
       cameraContainer.style.zIndex = "10";
       cameraContainer.style.boxShadow = "none";
-
-      // 비디오 요소 스타일 초기화
-      const videoElement = cameraContainer.querySelector("video");
       if (videoElement) {
         videoElement.style.transition = "";
-        videoElement.style.transform = "translate3d(0, 0, 0)";
+        const flipTransform = isCameraFlipped ? "scaleY(-1)" : "";
+        const resetZoomPan = " scale(1) translate(0%, 0%)";
+        videoElement.style.transform = `translate3d(0, 0, 0)${flipTransform}${resetZoomPan}`;
       }
     }
 
-    // 컴포넌트 언마운트 시에만 상태 복구 (렌더링 사이클에는 영향 없도록)
     return () => {
-      // curtainActive가 false인 경우만 정리 함수 실행
       if (!curtainActive) {
         cameraContainer.style.zIndex = "10";
         cameraContainer.style.boxShadow = "none";
-
-        // 비디오 요소 스타일 초기화
-        const videoElement = cameraContainer.querySelector("video");
         if (videoElement) {
           videoElement.style.transition = "";
-          videoElement.style.transform = "translate3d(0, 0, 0)";
+          const flipTransform = isCameraFlipped ? "scaleY(-1)" : "";
+          const resetZoomPan = " scale(1) translate(0%, 0%)";
+          videoElement.style.transform = `translate3d(0, 0, 0)${flipTransform}${resetZoomPan}`;
         }
       }
     };
-  }, [curtainActive, cameraContainerRef]);
+  }, [curtainActive, cameraContainerRef, isCameraFlipped]);
 
   if (!curtainActive) return null;
 

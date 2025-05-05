@@ -29,22 +29,24 @@ const VideoContainer = styled.div`
   transform: translate3d(0, 0, 0); // 하드웨어 가속
 `;
 
-const Video = styled.video`
+const Video = styled.video<{ isFlipped: boolean }>`
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transform: translate3d(0, 0, 0); // 하드웨어 가속
+  transform: ${(props) => (props.isFlipped ? "scaleY(-1)" : "none")};
+  transform-origin: center center;
 `;
 
 // 캔버스 기반으로 되돌리고 최적화
-const FaceCanvas = styled.canvas`
+const FaceCanvas = styled.canvas<{ isFlipped: boolean }>`
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
-  transform: translate3d(0, 0, 0); // 하드웨어 가속
+  transform: ${(props) => (props.isFlipped ? "scaleY(-1)" : "none")};
+  transform-origin: center center;
 `;
 
 // 프레임 캡처용 숨겨진 캔버스 추가
@@ -59,6 +61,7 @@ export interface CameraProps {
   isConnected?: boolean;
   onStabilityChange?: (isStable: boolean) => void;
   shouldSendFrameNow?: boolean;
+  isFlipped?: boolean;
 }
 
 // 외부에서 호출할 수 있는 메서드 타입 정의
@@ -76,6 +79,7 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
       isConnected = false,
       onStabilityChange,
       shouldSendFrameNow = false,
+      isFlipped = false,
     },
     ref
   ) => {
@@ -97,6 +101,8 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
 
     const shouldSendFrameNowRef = useRef(shouldSendFrameNow);
     const facesPropRef = useRef(faces);
+    const isFlippedRef = useRef(isFlipped);
+    const tempDetectionCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
     useEffect(() => {
       shouldSendFrameNowRef.current = shouldSendFrameNow;
@@ -105,6 +111,10 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
     useEffect(() => {
       facesPropRef.current = faces;
     }, [faces]);
+
+    useEffect(() => {
+      isFlippedRef.current = isFlipped;
+    }, [isFlipped]);
 
     const { currentMode, isSelecting } = useAnimationContext();
 
@@ -164,6 +174,15 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
+      if (
+        videoRef.current.videoWidth > 0 &&
+        (canvas.width !== videoRef.current.videoWidth ||
+          canvas.height !== videoRef.current.videoHeight)
+      ) {
+        canvas.width = videoRef.current.videoWidth;
+        canvas.height = videoRef.current.videoHeight;
+      }
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.strokeStyle = "#00ff00";
       ctx.lineWidth = 2;
@@ -174,7 +193,11 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
 
       if (facesToDraw.length > 0) {
         facesToDraw.forEach(([x, y, w, h]) => {
-          ctx.strokeRect(x, y, w, h);
+          let drawY = y;
+          if (isFlippedRef.current) {
+            drawY = canvas.height - y - h;
+          }
+          ctx.strokeRect(x, drawY, w, h);
         });
       }
     }, [isSelecting]);
@@ -220,9 +243,19 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
                 canvas.height = video.videoHeight;
               }
 
+              ctx.save();
+
+              if (isFlippedRef.current) {
+                ctx.scale(1, -1);
+                ctx.translate(0, -canvas.height);
+              }
+
               ctx.imageSmoothingEnabled = true;
               ctx.imageSmoothingQuality = "high";
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+              ctx.restore();
+
               const frame = canvas.toDataURL("image/jpeg", 0.85);
               const base64Data = frame.split(",")[1];
 
@@ -267,15 +300,46 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
       }
 
       const video = videoRef.current;
-      const canvas = faceCanvasRef.current;
+      const faceCanvas = faceCanvasRef.current;
+
+      if (!tempDetectionCanvasRef.current) {
+        tempDetectionCanvasRef.current = document.createElement("canvas");
+      }
+      const tempCanvas = tempDetectionCanvasRef.current;
+      const tempCtx = tempCanvas.getContext("2d");
+      if (!tempCtx) return;
 
       const displaySize = {
         width: video.videoWidth,
         height: video.videoHeight,
       };
-      faceapi.matchDimensions(canvas, displaySize);
 
-      const detections = await faceapi.detectAllFaces(video, detectorOptions);
+      if (
+        faceCanvas.width !== displaySize.width ||
+        faceCanvas.height !== displaySize.height
+      ) {
+        faceapi.matchDimensions(faceCanvas, displaySize);
+      }
+      if (
+        tempCanvas.width !== displaySize.width ||
+        tempCanvas.height !== displaySize.height
+      ) {
+        tempCanvas.width = displaySize.width;
+        tempCanvas.height = displaySize.height;
+      }
+
+      tempCtx.save();
+      if (isFlippedRef.current) {
+        tempCtx.scale(1, -1);
+        tempCtx.translate(0, -tempCanvas.height);
+      }
+      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+      tempCtx.restore();
+
+      const detections = await faceapi.detectAllFaces(
+        tempCanvas,
+        detectorOptions
+      );
       const resizedDetections = faceapi.resizeResults(detections, displaySize);
 
       const detectedFaceBoxes = resizedDetections.map((d) => {
@@ -361,9 +425,19 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
               canvas.height = video.videoHeight;
             }
 
+            ctx.save();
+
+            if (isFlippedRef.current) {
+              ctx.scale(1, -1);
+              ctx.translate(0, -canvas.height);
+            }
+
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = "high";
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            ctx.restore();
+
             const frame = canvas.toDataURL("image/jpeg", 0.85);
             const base64Data = frame.split(",")[1];
 
@@ -552,8 +626,14 @@ const Camera = forwardRef<CameraHandle, CameraProps>(
             얼굴 인식 모델 로딩 중...
           </div>
         )}
-        <Video ref={videoRef} autoPlay playsInline muted />
-        <FaceCanvas ref={faceCanvasRef} />
+        <Video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          isFlipped={isFlipped}
+        />
+        <FaceCanvas ref={faceCanvasRef} isFlipped={isFlipped} />
         <HiddenCanvas ref={canvasRef} />
       </VideoContainer>
     );

@@ -208,11 +208,13 @@ const ZoomTargetPoint = styled.img<{
 
 interface ExtendedAnimationProps extends AnimationProps {
   cameraContainerRef?: React.RefObject<HTMLDivElement>;
+  isCameraFlipped?: boolean;
 }
 
 const ScannerAnimation: React.FC<ExtendedAnimationProps> = ({
   websocket,
   cameraContainerRef,
+  isCameraFlipped = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [targetPoints, setTargetPoints] = useState<
@@ -277,16 +279,18 @@ const ScannerAnimation: React.FC<ExtendedAnimationProps> = ({
         const newScale = currentScale + (target - currentScale) * easedProgress;
         setCurrentScale(newScale);
 
-        const newTransform = `scale(${newScale}) translate(${
+        const flipPrefix = isCameraFlipped ? "scaleY(-1) " : "";
+        const zoomPanTransform = `scale(${newScale}) translate(${
           translateX * 100
         }%, ${translateY * 100}%)`;
+        const newTransform = `translate3d(0, 0, 0) ${flipPrefix}${zoomPanTransform}`;
 
         if (cameraContainerRef?.current) {
           const videoElement =
             cameraContainerRef.current.querySelector("video");
           if (videoElement) {
             videoElement.style.transition = "none";
-            videoElement.style.transform = `translate3d(0, 0, 0) ${newTransform}`;
+            videoElement.style.transform = newTransform;
           }
         }
 
@@ -301,7 +305,7 @@ const ScannerAnimation: React.FC<ExtendedAnimationProps> = ({
 
       animationRef.current = requestAnimationFrame(animate);
     },
-    [cameraContainerRef, currentScale]
+    [cameraContainerRef, currentScale, isCameraFlipped]
   );
 
   const performPrewarmup = useCallback(() => {
@@ -337,15 +341,17 @@ const ScannerAnimation: React.FC<ExtendedAnimationProps> = ({
       setTimeout(runWarmupStep, 50);
     };
 
+    // 웜업 시작
     runWarmupStep();
 
     const videoElement = cameraContainerRef.current.querySelector("video");
     if (videoElement) {
       videoElement.style.willChange = "transform";
-      videoElement.style.transform = "translate3d(0, 0, 0)";
+      const initialFlipTransform = isCameraFlipped ? "scaleY(-1)" : "none";
+      videoElement.style.transform = `translate3d(0, 0, 0) ${initialFlipTransform}`;
       void videoElement.offsetHeight;
     }
-  }, [cameraContainerRef]);
+  }, [cameraContainerRef, isCameraFlipped]);
 
   useEffect(() => {
     if (!isWarmedUp && scannerActive) {
@@ -457,9 +463,9 @@ const ScannerAnimation: React.FC<ExtendedAnimationProps> = ({
 
       if (
         cameraContainerRef?.current &&
-        (scannerStage === "first_zoom" || scannerStage === "final_zoom")
+        (currentStage === "first_zoom" || currentStage === "final_zoom")
       ) {
-        const currentState = { face: scannerTargetFace, stage: scannerStage };
+        const currentState = { face: scannerTargetFace, stage: currentStage };
         const prevState = prevZoomStateRef.current;
 
         if (
@@ -472,44 +478,47 @@ const ScannerAnimation: React.FC<ExtendedAnimationProps> = ({
           const container = cameraContainerRef.current;
           const videoElement = container.querySelector("video");
 
-          if (videoElement) {
+          if (videoElement && videoElement.videoHeight > 0) {
             const videoWidth = videoElement.videoWidth;
             const videoHeight = videoElement.videoHeight;
 
             const [x, y, w, h] = scannerTargetFace;
 
-            // 얼굴 중심 좌표 계산
-            const centerX = x + w / 2;
-            const centerY = y + h / 2;
+            let centerY_for_translate: number;
+            if (isCameraFlipped) {
+              const originalY = videoHeight - y - h;
+              centerY_for_translate = originalY + h / 2;
+            } else {
+              centerY_for_translate = y + h / 2;
+            }
 
-            // 화면 중앙으로부터의 오프셋 계산
+            const centerX = x + w / 2;
             const translateX =
               ((videoWidth / 2 - centerX) / (videoWidth / 2)) * 0.5;
             const translateY =
-              ((videoHeight / 2 - centerY) / (videoHeight / 2)) * 0.5;
+              ((videoHeight / 2 - centerY_for_translate) / (videoHeight / 2)) *
+              0.5;
 
-            // 얼굴 비율 계산
             const faceRatio = w / videoWidth;
-            let finalScale: number = scannerZoomScale; // 기본값으로 서버 값 사용
+            let finalScale =
+              typeof scannerZoomScale === "number" ? scannerZoomScale : 1.0;
 
-            // 각 스테이지별로 다른 확대율 적용
-            if (scannerStage === "first_zoom") {
-              // 첫번째 줌: 얼굴이 화면 너비의 7% 차지하도록
+            if (currentStage === "first_zoom") {
               const firstZoomRatio = 0.07;
               finalScale = firstZoomRatio / Math.max(faceRatio, 0.01);
-              finalScale = Math.max(1.0, Math.min(3.0, finalScale)); // 첫번째 줌은 최대 3배로 제한
-            } else if (scannerStage === "final_zoom") {
-              // 최종 줌: 얼굴이 화면 너비의 27% 차지하도록
+              finalScale = Math.max(1.0, Math.min(3.0, finalScale));
+            } else if (currentStage === "final_zoom") {
               const finalZoomRatio = 0.27;
               finalScale = finalZoomRatio / Math.max(faceRatio, 0.01);
-              finalScale = Math.max(1.0, Math.min(5.0, finalScale)); // 최종 줌은 최대 5배로 제한
+              finalScale = Math.max(1.0, Math.min(5.0, finalScale));
             }
 
-            // 계산된 스케일로 애니메이션 적용 (항상 숫자 타입임을 보장)
             animateScale(finalScale, translateX, translateY);
           }
         }
       }
+    } else {
+      setTargetFace(null);
     }
 
     if (currentStage) {
@@ -530,8 +539,29 @@ const ScannerAnimation: React.FC<ExtendedAnimationProps> = ({
       setResultMessage(currentResultMessage);
     }
 
-    if (targetFace) {
-      setTransformedTargetFace(transformCoordinates(targetFace));
+    if (scannerTargetPoints.length > 0 && currentStage === "fake_targeting") {
+      setTargetPoints(
+        scannerTargetPoints.map((point) => ({
+          x: point[0],
+          y: point[1],
+          size: 100,
+        }))
+      );
+    } else if (
+      scannerTargetPoints.length > 0 &&
+      currentStage === "zoom_targeting"
+    ) {
+      setZoomTargetPoints(
+        scannerTargetPoints.map((point) => ({
+          x: point[0],
+          y: point[1],
+          size: 20,
+        }))
+      );
+    }
+
+    if (scannerTargetFace) {
+      setTransformedTargetFace(transformCoordinates(scannerTargetFace));
     } else {
       setTransformedTargetFace(null);
     }
@@ -539,7 +569,6 @@ const ScannerAnimation: React.FC<ExtendedAnimationProps> = ({
     scannerTargetPoints,
     scannerTargetFace,
     scannerZoomScale,
-    scannerStage,
     currentStage,
     scannerProgress,
     scannerStatusText,
@@ -549,6 +578,7 @@ const ScannerAnimation: React.FC<ExtendedAnimationProps> = ({
     cameraContainerRef,
     animateScale,
     transformCoordinates,
+    isCameraFlipped,
   ]);
 
   const [fireOpacity, setFireOpacity] = useState(0.4);
@@ -570,33 +600,32 @@ const ScannerAnimation: React.FC<ExtendedAnimationProps> = ({
     }
 
     const cameraContainer = cameraContainerRef.current;
+    const videoElement = cameraContainer.querySelector("video");
 
     if (scannerActive) {
       cameraContainer.style.zIndex = "1";
     } else {
       cameraContainer.style.zIndex = "10";
       cameraContainer.style.boxShadow = "none";
-
-      const videoElement = cameraContainer.querySelector("video");
       if (videoElement) {
         videoElement.style.transition = "";
-        videoElement.style.transform = "translate3d(0, 0, 0)";
+        const flipTransform = isCameraFlipped ? "scaleY(-1)" : "";
+        const resetZoomPan = " scale(1) translate(0%, 0%)";
+        videoElement.style.transform = `translate3d(0, 0, 0)${flipTransform}${resetZoomPan}`;
       }
     }
 
     return () => {
-      if (!scannerActive) {
-        cameraContainer.style.zIndex = "10";
-        cameraContainer.style.boxShadow = "none";
-
-        const videoElement = cameraContainer.querySelector("video");
-        if (videoElement) {
-          videoElement.style.transition = "";
-          videoElement.style.transform = "translate3d(0, 0, 0)";
-        }
+      cameraContainer.style.zIndex = "10";
+      cameraContainer.style.boxShadow = "none";
+      if (videoElement) {
+        videoElement.style.transition = "";
+        const flipTransform = isCameraFlipped ? "scaleY(-1)" : "";
+        const resetZoomPan = " scale(1) translate(0%, 0%)";
+        videoElement.style.transform = `translate3d(0, 0, 0)${flipTransform}${resetZoomPan}`;
       }
     };
-  }, [scannerActive, cameraContainerRef]);
+  }, [scannerActive, cameraContainerRef, isCameraFlipped]);
 
   useEffect(() => {
     return () => {
@@ -614,23 +643,29 @@ const ScannerAnimation: React.FC<ExtendedAnimationProps> = ({
       const videoElement = cameraContainerRef.current.querySelector("video");
       if (!videoElement) return;
 
-      // 현재 줌 스케일 유지하면서 패닝만 적용
-      const newTransform = `scale(${currentScale}) translate(${
-        offsetX * 100
-      }%, ${offsetY * 100}%)`;
+      const flipPrefix = isCameraFlipped ? "scaleY(-1) " : "";
 
-      // 마지막 위치로 이동할 때는 더 천천히, 부드럽게
+      // --- 수정: isCameraFlipped일 때 offsetY 부호 반전 ---
+      const finalOffsetY = isCameraFlipped ? -offsetY : offsetY;
+      // --- 수정 끝 ---
+
+      // 수정된 finalOffsetY 사용
+      const zoomPanTransform = `scale(${currentScale}) translate(${
+        offsetX * 100
+      }%, ${finalOffsetY * 100}%)`;
+      const newTransform = `translate3d(0, 0, 0) ${flipPrefix}${zoomPanTransform}`;
+
       if (isLastPosition) {
         videoElement.style.transition =
-          "transform 0.85s cubic-bezier(0.23, 1, 0.32, 1)"; // 더 느린 easeOutQuint
+          "transform 0.85s cubic-bezier(0.23, 1, 0.32, 1)";
       } else {
         videoElement.style.transition =
           "transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1)";
       }
 
-      videoElement.style.transform = `translate3d(0, 0, 0) ${newTransform}`;
+      videoElement.style.transform = newTransform;
     },
-    [cameraContainerRef, currentScale]
+    [cameraContainerRef, currentScale, isCameraFlipped]
   );
 
   // 카메라 패닝 효과 적용
