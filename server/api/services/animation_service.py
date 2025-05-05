@@ -10,10 +10,10 @@ import asyncio
 MODE_LIMITS = {
     "handpick": 1,
     "scanner": 3,
-    "slot": 100,
-    "roulette": 100,
-    "curtain": 100,
-    "race": 100,
+    "slot": 20,
+    "roulette": 20,
+    "curtain": 20,
+    "race": 20,
 }
 
 class AnimationService:
