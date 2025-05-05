@@ -58,7 +58,7 @@ const ModeCard: React.FC<ModeCardProps> = ({
     <Card bgColor={color} onClick={onClick}>
       <IconText>{icon}</IconText>
       <ModeName>{name}</ModeName>
-      {connectionStatus === "connecting" && <StatusText>연결 중...</StatusText>}
+      {/* {connectionStatus === "connecting" && <StatusText>연결 중...</StatusText>} */}
     </Card>
   );
 };

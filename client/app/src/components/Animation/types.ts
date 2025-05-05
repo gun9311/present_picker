@@ -382,13 +382,26 @@ export interface HandpickCalibrationCompleteMessage
   measurement_time: number;
 }
 
-// --- 추가: 핸드픽 감지 종료 메시지 ---
+// 핸드픽 감지 종료 메시지
 export interface HandpickDetectionEndMessage extends BaseWebSocketMessage {
   type: "handpick_detection_end";
 }
-// --- 추가 끝 ---
 
-// --- 잭팟 효과 메시지 타입 추가 ---
+// --- 추가: 모드 입장 가능 여부 확인 ---
+export interface CheckAvailabilityMessage extends BaseWebSocketMessage {
+  type: "check_availability";
+  mode: AnimationMode;
+}
+
+// --- 추가: 모드 입장 가능 여부 응답 ---
+export interface AvailabilityResponseMessage extends BaseWebSocketMessage {
+  type: "availability_response";
+  allowed: boolean;
+  mode: AnimationMode;
+  reason?: "limit_reached" | "invalid_mode" | string; // 상세 이유 추가
+}
+
+// 잭팟 효과 메시지 타입 추가
 export interface ShowJackpotEffectMessage extends BaseWebSocketMessage {
   type: "show_jackpot_effect";
 }
@@ -467,4 +480,6 @@ export type WebSocketMessage =
   | HandpickCalibrationCompleteMessage
   | HandpickProgressMessage
   | HandpickResultMessage
-  | HandpickDetectionEndMessage;
+  | HandpickDetectionEndMessage
+  | CheckAvailabilityMessage
+  | AvailabilityResponseMessage;
