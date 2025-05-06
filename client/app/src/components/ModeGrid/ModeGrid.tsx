@@ -43,8 +43,8 @@ const ModeGrid: React.FC = () => {
   ); // 입장 불가 시 에러 메시지
 
   // const WS_URL = import.meta.env.VITE_WS_URL;
-  // const WS_URL = "wss://t-bot.site/ws/animation";
-  const WS_URL = "ws://localhost:8000/ws/animation";
+  const WS_URL = "wss://t-bot.site/ws/animation";
+  // const WS_URL = "ws://localhost:8000/ws/animation";
 
   if (!WS_URL) {
     throw new Error("VITE_WS_URL is not defined in .env file");
