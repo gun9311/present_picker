@@ -5,6 +5,7 @@ import numpy as np
 from src.face_detection import detect_faces_yolo
 from src.animation import ANIMATION_MODULES
 import asyncio
+import redis.asyncio as redis # 비동기 Redis 클라이언트 임포트
 
 # 모드별 최대 허용 인원 정의 (handpick: 1명, scanner: 3명, 나머지는 제한 없음 - 매우 큰 수)
 MODE_LIMITS = {
@@ -20,30 +21,35 @@ class AnimationService:
     def __init__(self):
         # 사용자별 마지막 프레임을 저장할 딕셔너리
         self.last_frames = {}
-        # 활성 클라이언트 저장 (웹소켓 객체)
+        # 활성 클라이언트 저장 (웹소켓 객체) - 워커별로 관리됨
         self.active_clients = {}
-        # 진행 중인 애니메이션 작업 저장 (애니메이션 중지 플래그)
+        # 진행 중인 애니메이션 작업 저장 (애니메이션 중지 플래그) - 워커별로 관리될 수 있음
         self.running_animations = {}
-        # 클라이언트별 활성 애니메이션 상태 (애니메이션 로직 실행 여부)
+        # 클라이언트별 활성 애니메이션 상태 (애니메이션 로직 실행 여부) - 워커별로 관리될 수 있음
         self.active_animations = {}
-        # 모드별 활성 사용자 ID 저장 (set 사용)
-        self.active_mode_users = {mode: set() for mode in MODE_LIMITS}
+        
+        # --- Redis 클라이언트 초기화 ---
+        # TODO: Redis 연결 정보는 환경 변수나 설정 파일에서 가져오도록 수정하는 것이 좋습니다.
+        self.redis_pool = redis.ConnectionPool(host='localhost', port=6379, db=0, decode_responses=True)
+        self.redis = redis.Redis(connection_pool=self.redis_pool)
+        # print("AnimationService 초기화: Redis 클라이언트 생성 완료")
+
+        # self.active_mode_users는 이제 Redis가 관리하므로 제거합니다.
         # print(f"AnimationService 초기화 완료. 모드별 사용자 저장소: {self.active_mode_users}")
 
     def register_client(self, client_id, websocket):
         """새로운 클라이언트 연결 등록"""
         self.active_clients[client_id] = websocket
-        # active_animations 초기화는 애니메이션 시작 시점으로 이동 고려
-        # print(f"새 클라이언트 등록: {client_id}, 현재 총 {len(self.active_clients)}개 연결")
+        # print(f"새 클라이언트 등록: {client_id}, 현재 총 {len(self.active_clients)}개 연결 (워커 기준)")
 
     def unregister_client(self, client_id):
-        """클라이언트 연결 해제 처리"""
+        """클라이언트 연결 해제 처리 (워커 내부용)"""
         if client_id in self.active_clients:
             del self.active_clients[client_id]
-            # print(f"클라이언트 등록 해제: {client_id}, 현재 총 {len(self.active_clients)}개 연결")
+            # print(f"클라이언트 등록 해제: {client_id}, 현재 총 {len(self.active_clients)}개 연결 (워커 기준)")
 
-    def cleanup_resources(self, client_id):
-        """클라이언트 연결 종료 시 관련 리소스 정리"""
+    async def cleanup_resources(self, client_id):
+        """클라이언트 연결 종료 시 관련 리소스 정리 (Redis 포함)"""
         # print(f"클라이언트 리소스 정리 시작: {client_id}")
 
         # 저장된 프레임 제거
@@ -52,27 +58,35 @@ class AnimationService:
 
         # 진행 중인 애니메이션 작업 정리
         if client_id in self.running_animations:
-            self.running_animations[client_id] = False # 실행 중지 플래그 설정
+            self.running_animations[client_id] = False 
             del self.running_animations[client_id]
 
         # 활성 애니메이션 상태 정리
         if client_id in self.active_animations:
-             # print(f"클라이언트 {client_id}의 활성 애니메이션 상태 정리")
              del self.active_animations[client_id]
 
-        # 모드별 활성 사용자 목록에서 제거
-        removed_from_mode = None
-        for mode, users_set in self.active_mode_users.items():
-            if client_id in users_set:
-                users_set.remove(client_id)
-                removed_from_mode = mode
-                # print(f"클라이언트 {client_id}가 {mode} 모드에서 나감. 현재 {mode} 인원: {len(users_set)}")
-                break # 일반적으로 클라이언트는 하나의 모드에만 있을 것으로 가정
+        # --- Redis에서 클라이언트 모드 정보 제거 ---
+        client_mode_key = f"client:{client_id}:current_mode"
+        mode = await self.redis.get(client_mode_key)
+        removed_from_mode_redis = False
+        if mode:
+            mode_users_key = f"mode:{mode}:users"
+            await self.redis.srem(mode_users_key, str(client_id))
+            await self.redis.delete(client_mode_key)
+            # print(f"Redis: 클라이언트 {client_id}가 {mode} 모드에서 나감.")
+            removed_from_mode_redis = True
+        
+        # --- 기존 로직: 모드별 활성 사용자 목록에서 제거 (Python dict - 이제 사용 안 함) ---
+        # removed_from_mode = None
+        # for mode_key_local, users_set in self.active_mode_users.items():
+        #     if client_id in users_set:
+        #         users_set.remove(client_id)
+        #         removed_from_mode = mode_key_local
+        #         break
 
-        # 클라이언트 등록 해제 (중요: 여기서 호출)
-        self.unregister_client(client_id)
+        self.unregister_client(client_id) # 워커 내부 active_clients 에서 제거
 
-        # print(f"클라이언트 리소스 정리 완료: {client_id}, 모드: {removed_from_mode}")
+        # print(f"클라이언트 리소스 정리 완료: {client_id}, Redis에서 모드 제거: {removed_from_mode_redis}")
 
     async def handle_animation(self, websocket: WebSocket, data: dict):
         client_id = id(websocket)
@@ -96,22 +110,25 @@ class AnimationService:
                 })
                 return
 
-            current_users = len(self.active_mode_users.get(mode, set()))
-            limit = MODE_LIMITS.get(mode, 0)
-            # print(f"[AnimationService] 모드 '{mode}': 현재 인원 {current_users}, 제한 {limit}")
+            # --- Redis에서 현재 모드 사용자 수 확인 ---
+            mode_users_key = f"mode:{mode}:users"
+            current_users = await self.redis.scard(mode_users_key)
+            limit = MODE_LIMITS.get(mode, float('inf')) # MODE_LIMITS에 없으면 무제한으로 처리
+            
+            # print(f"[AnimationService] Redis 모드 '{mode}': 현재 인원 {current_users}, 제한 {limit}")
 
             if current_users < limit:
-                 # 입장 허용: active_mode_users에 추가하고 응답 전송
-                self.active_mode_users[mode].add(client_id)
-                # print(f"[AnimationService] 모드 '{mode}' 입장 허용. 클라이언트 {client_id} 추가. 현재 인원: {len(self.active_mode_users[mode])}")
+                # 입장 허용: Redis Set에 추가 및 클라이언트 모드 정보 저장
+                await self.redis.sadd(mode_users_key, str(client_id))
+                await self.redis.set(f"client:{client_id}:current_mode", mode)
+                # print(f"[AnimationService] Redis 모드 '{mode}' 입장 허용. 클라이언트 {client_id} 추가. 현재 인원: {await self.redis.scard(mode_users_key)}")
                 await websocket.send_json({
                     'type': 'availability_response',
                     'allowed': True,
                     'mode': mode
                 })
             else:
-                 # 입장 불가 (인원 초과): 응답만 전송
-                # print(f"[AnimationService] 모드 '{mode}' 입장 불가 (인원 초과). 클라이언트: {client_id}")
+                # print(f"[AnimationService] Redis 모드 '{mode}' 입장 불가 (인원 초과). 클라이언트: {client_id}")
                 await websocket.send_json({
                     'type': 'availability_response',
                     'allowed': False,

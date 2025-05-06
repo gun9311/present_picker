@@ -24,6 +24,6 @@ async def animation_websocket(websocket: WebSocket):
         print(f"WebSocket 에러: {str(e)}")
     finally:
         # 어떤 경우든 클라이언트 연결 종료 시 정리 작업 수행
-        animation_service.cleanup_resources(client_id)
+        await animation_service.cleanup_resources(client_id)
         # 중요: 이미 닫힌 연결을 다시 닫으려고 시도하지 않도록 수정
         # 직접 close()를 호출하지 않고 정리 작업만 수행
